@@ -3,9 +3,9 @@ import contract from '../../game.contract.json';
 import { TUNING } from '../../src/sim/constants';
 import { allocateNextId, buildSnapshot, createWorld } from '../../src/sim/world';
 
-describe('world & scenario initialization (Contract v1.2)', () => {
-  it('syncs TUNING deeply with game.contract.json v1.2', () => {
-    expect(contract.contract_version).toBe('1.2');
+describe('world & scenario initialization (Contract v1.3)', () => {
+  it('syncs TUNING deeply with game.contract.json v1.3', () => {
+    expect(contract.contract_version).toBe('1.3');
     expect(TUNING).toEqual(contract.tuning);
   });
 
