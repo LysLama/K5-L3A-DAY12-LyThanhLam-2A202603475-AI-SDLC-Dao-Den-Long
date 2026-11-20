@@ -28,13 +28,14 @@ function loadSettings(): GameSettings {
         sensitivity:
           typeof parsed.sensitivity === 'number'
             ? Math.max(40, Math.min(200, parsed.sensitivity))
-            : 100
+            : 100,
+        colorblind: typeof parsed.colorblind === 'boolean' ? parsed.colorblind : false
       };
     }
   } catch {
     // ignore storage restriction
   }
-  return { volume: 75, sensitivity: 100 };
+  return { volume: 75, sensitivity: 100, colorblind: false };
 }
 
 function saveSettings(settings: GameSettings): void {
@@ -468,6 +469,8 @@ class GameApp {
         frameDt,
         elapsedSec: this.elapsedSec,
         isMovingInput,
+        colorblind: this.settings.colorblind,
+        cameraPos: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
         prevPlayerPos: this.prevPlayerPos,
         prevShadePositions: this.prevShadePositions,
         prevDrifterPositions: this.prevDrifterPositions

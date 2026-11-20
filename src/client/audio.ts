@@ -134,6 +134,14 @@ export class Soundscape {
       } else if (ev.name === 'deposit') {
         this.tone(440, 0.18, 'triangle', 0.08);
         this.tone(554.37, 0.22, 'sine', 0.06, 0.05);
+      } else if (ev.name === 'refuel') {
+        this.tone(523.25, 0.16, 'triangle', 0.075);
+        this.tone(698.46, 0.22, 'sine', 0.07, 0.05);
+      } else if (ev.name === 'lantern_out') {
+        this.tone(440, 0.42, 'sine', 0.09, 0, 196);
+        this.tone(220, 0.45, 'triangle', 0.05, 0.08, 130);
+      } else if (ev.name === 'fuel_drain') {
+        this.tone(165, 0.2, 'triangle', 0.04, 0, 120);
       } else if (ev.name === 'lantern_lit') {
         [392, 493.88, 587.33, 783.99].forEach((f, idx) => {
           this.tone(f, 0.72, 'sine', 0.08, idx * 0.07);

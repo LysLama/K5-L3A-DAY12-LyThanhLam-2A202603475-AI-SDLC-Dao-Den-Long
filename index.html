@@ -22,6 +22,7 @@
           <div id="hud-flames" class="pill hud-flames" title="Ngọn lửa còn lại"></div>
           <div id="hud-night-badge" class="pill hud-night-badge">Đêm 1 · Đảo Bến</div>
           <div id="hud-charm-badge" class="pill hud-charm hidden"></div>
+          <div id="hud-lowfuel-badge" class="pill hud-lowfuel hidden"></div>
           <div id="hud-wind-badge" class="pill hud-wind hidden"></div>
         </div>
 
@@ -79,17 +80,17 @@
           <button id="btn-pick-night-1" class="night-tile" type="button">
             <span class="night-tile-num">Đêm 1</span>
             <span class="night-tile-name">Đảo Bến</span>
-            <span class="night-tile-meta">5 Đèn · 05:00</span>
+            <span class="night-tile-meta">Giữ ≥ 3/5 Đèn · 04:00</span>
           </button>
           <button id="btn-pick-night-2" class="night-tile" type="button">
             <span class="night-tile-num">Đêm 2</span>
             <span class="night-tile-name">Đảo Cau</span>
-            <span class="night-tile-meta">6 Đèn · 05:30</span>
+            <span class="night-tile-meta">Giữ ≥ 4/6 Đèn · 04:30</span>
           </button>
           <button id="btn-pick-night-3" class="night-tile" type="button">
             <span class="night-tile-num">Đêm 3</span>
             <span class="night-tile-name">Đảo Chuông</span>
-            <span class="night-tile-meta">7 Đèn · 06:00</span>
+            <span class="night-tile-meta">Giữ ≥ 5/7 Đèn · 05:00</span>
           </button>
         </div>
 
@@ -134,6 +135,13 @@
             <div class="setting-ctrl">
               <input id="input-sensitivity" type="range" min="40" max="200" step="10" value="100" />
               <span id="val-sensitivity" class="setting-val">1.0×</span>
+            </div>
+          </label>
+          <label class="setting-row">
+            <span>Bảng màu dễ phân biệt</span>
+            <div class="setting-ctrl">
+              <input id="input-colorblind" type="checkbox" />
+              <span id="val-colorblind" class="setting-val">Tắt</span>
             </div>
           </label>
         </div>
