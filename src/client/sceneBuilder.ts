@@ -117,6 +117,7 @@ export class IslandScene {
   private readonly lanternFuelFillInst: THREE.InstancedMesh;
   private readonly lanternOrbitMoteInst: THREE.InstancedMesh;
   private readonly lanternLights = new Map<string, THREE.PointLight>();
+  private readonly lanternLift = new Map<string, number>();
   private readonly drifterVisuals = new Map<string, DrifterModelRig>();
   private readonly charmVisuals = new Map<string, CharmVisual>();
 
@@ -353,8 +354,10 @@ export class IslandScene {
     this.scene.add(this.mayGroup);
 
     for (const l of initialState.lanterns) {
+      const lift = getVisualGroundLift(this.night, l.pos[0], l.pos[2], l.pos[1]);
+      this.lanternLift.set(l.id, lift);
       const light = new THREE.PointLight(PALETTE.lanternWarm, 0, 22, 1.45);
-      light.position.set(l.pos[0], l.pos[1] + 3.3, l.pos[2]);
+      light.position.set(l.pos[0], l.pos[1] + lift + 3.3, l.pos[2]);
       light.visible = false;
       this.scene.add(light);
       this.lanternLights.set(l.id, light);
@@ -928,7 +931,7 @@ export class IslandScene {
 
   private createJumpPadVisual(pos: Vec3): void {
     const group = new THREE.Group();
-    group.position.set(pos[0], pos[1], pos[2]);
+    group.position.set(pos[0], pos[1] + getVisualGroundLift(this.night, pos[0], pos[2], pos[1]), pos[2]);
 
     const disc = new THREE.Mesh(
       new THREE.CylinderGeometry(0.95, 1.05, 0.14, 24),
@@ -1135,7 +1138,8 @@ export class IslandScene {
       if (l.lit) litCount += 1;
       const req = l.everLit ? TUNING.relight_cost : TUNING.lantern_cost;
       const ratio = Math.min(1, l.deposited / Math.max(1, req));
-      const [lx, ly, lz] = l.pos;
+      const [lx, , lz] = l.pos;
+      const ly = l.pos[1] + (this.lanternLift.get(l.id) ?? 0);
 
       // Pedestal
       this.tmpDummy.position.set(lx, ly, lz);
@@ -1487,7 +1491,7 @@ export class IslandScene {
       if (s.state === 'drain' && drainTarget && drainBeamIdx < MAX_INST_DRAIN_BEAMS) {
         const bsy = syGrounded + 0.95 + hover;
         const tx = drainTarget.pos[0];
-        const ty = drainTarget.pos[1] + 3.25;
+        const ty = drainTarget.pos[1] + (this.lanternLift.get(drainTarget.id) ?? 0) + 3.25;
         const tz = drainTarget.pos[2];
         const dist = Math.hypot(tx - sx, ty - bsy, tz - sz);
         if (dist > 0.05) {
@@ -1591,15 +1595,15 @@ export class IslandScene {
         this.vfx.spawnDashTrail(renderPlayerPos, p.facing);
       } else if (ev.name === 'deposit' || ev.name === 'refuel') {
         const target = state.lanterns.find((l) => l.id === ev.data.lantern_id);
-        if (target) this.vfx.spawnDepositStream(renderPlayerPos, target.pos);
+        if (target) this.vfx.spawnDepositStream(renderPlayerPos, [target.pos[0], target.pos[1] + (this.lanternLift.get(target.id) ?? 0), target.pos[2]]);
       } else if (ev.name === 'lantern_lit') {
         const target = state.lanterns.find((l) => l.id === ev.data.lantern_id);
-        if (target) this.vfx.spawnLanternCelebration(target.pos);
+        if (target) this.vfx.spawnLanternCelebration([target.pos[0], target.pos[1] + (this.lanternLift.get(target.id) ?? 0), target.pos[2]]);
       } else if (ev.name === 'lantern_out') {
         const target = state.lanterns.find((l) => l.id === ev.data.lantern_id);
         if (target) {
           this.vfx.spawnBurst(
-            [target.pos[0], target.pos[1] + 2.5, target.pos[2]],
+            [target.pos[0], target.pos[1] + (this.lanternLift.get(target.id) ?? 0) + 2.5, target.pos[2]],
             PALETTE.lanternUnlit,
             18,
             3.8,
@@ -1611,7 +1615,7 @@ export class IslandScene {
         const target = state.lanterns.find((l) => l.id === ev.data.lantern_id);
         if (target) {
           this.vfx.spawnBurst(
-            [target.pos[0], target.pos[1] + 2.9, target.pos[2]],
+            [target.pos[0], target.pos[1] + (this.lanternLift.get(target.id) ?? 0) + 2.9, target.pos[2]],
             colorblind ? PALETTE.shadeEyeCb : PALETTE.shadeEye,
             10,
             2.6,
@@ -1669,15 +1673,38 @@ export class IslandScene {
         this.cloudInst.instanceMatrix.needsUpdate = true;
       }
       const windMul = state.wind.active ? 2.1 : state.wind.warning ? 1.45 : 1.0;
+      // Chase-camera occlusion: canopy crowns that hide Mây shrink away so she is never lost in the jungle
+      const cam = opts.cameraPos;
+      const occlusionOn = Boolean(cam) && !benchMode;
+      const [pcx, pcy, pcz] = occlusionOn ? (cam as Vec3) : [0, 0, 0];
+      const segX = renderPlayerPos[0] - pcx;
+      const segY = renderPlayerPos[1] + 1.0 - pcy;
+      const segZ = renderPlayerPos[2] - pcz;
+      const segLenSq = Math.max(1e-6, segX * segX + segY * segY + segZ * segZ);
       for (const batch of this.swayBatches) {
+        const occ = occlusionOn && batch.occlude === true;
         for (const item of batch.items) {
+          let drawScale = item.scale;
+          if (occ) {
+            const qx = item.x - pcx;
+            const qy = item.y - pcy;
+            const qz = item.z - pcz;
+            const t = Math.max(0, Math.min(1, (qx * segX + qy * segY + qz * segZ) / segLenSq));
+            const dx = qx - segX * t;
+            const dy = qy - segY * t;
+            const dz = qz - segZ * t;
+            const radius = 1.6 * item.scale + 0.8;
+            const blocked = t < 0.985 && dx * dx + dy * dy + dz * dz < radius * radius;
+            item.vis += ((blocked ? 0 : 1) - item.vis) * 0.3;
+            drawScale = item.vis < 0.03 ? 0.001 : item.scale * item.vis;
+          }
           this.tmpDummy.position.set(item.x, item.y, item.z);
           this.tmpDummy.rotation.set(
             0,
             item.yaw,
             Math.sin(elapsedSec * 1.45 + item.idx * 0.8) * batch.amplitude * windMul
           );
-          this.tmpDummy.scale.setScalar(item.scale);
+          this.tmpDummy.scale.setScalar(drawScale);
           this.tmpDummy.updateMatrix();
           batch.inst.setMatrixAt(item.idx, this.tmpDummy.matrix);
         }

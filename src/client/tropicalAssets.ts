@@ -46,8 +46,10 @@ export interface PlacementItem {
 
 export interface SwayBatch {
   inst: THREE.InstancedMesh;
-  items: { x: number; y: number; z: number; yaw: number; scale: number; idx: number }[];
+  items: { x: number; y: number; z: number; yaw: number; scale: number; idx: number; vis: number }[];
   amplitude: number;
+  /** Tree crowns that shrink away while they hide the player from the chase camera. */
+  occlude?: boolean;
 }
 
 export interface NightPlacementPlan {
@@ -108,7 +110,7 @@ function buildPalmsCatalog(): Pick<
     cocoTrunkParts.push(
       colorizeGeo(
         transformGeo(new THREE.CylinderGeometry(rt, rb, 1.02, 5), [sx, sy, 0], [0, 0, -tiltZ]),
-        i % 2 === 0 ? '#73573d' : '#856749'
+        i % 2 === 0 ? '#b8946a' : '#c9a67a'
       )
     );
   }
@@ -123,7 +125,7 @@ function buildPalmsCatalog(): Pick<
           [0, 0, 0],
           [0.9, 1.15, 0.9]
         ),
-        c === 0 ? '#6e5226' : '#587032'
+        c === 0 ? '#7a5a2c' : '#587032'
       )
     );
   }
@@ -136,15 +138,15 @@ function buildPalmsCatalog(): Pick<
       [1, 1, 0.5]
     );
     frond.rotateY(fa);
-    cocoCrownParts.push(colorizeGeo(frond, f % 2 === 0 ? '#2b6147' : '#357554'));
+    cocoCrownParts.push(colorizeGeo(frond, f % 2 === 0 ? '#4fa83a' : '#6cc04a'));
   }
 
   const arecaTrunk = mergeParts([
-    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.10, 0.19, 4.05, 6), [0, 2.02, 0]), '#7d6b52'),
+    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.10, 0.19, 4.05, 6), [0, 2.02, 0]), '#c2b79a'),
     colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.125, 0.115, 0.55, 6), [0, 4.25, 0]), '#3b7350')
   ]);
   const arecaCrownParts: THREE.BufferGeometry[] = [
-    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.14, 1.1, 3), [0, 0.58, 0]), '#489166')
+    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.14, 1.1, 3), [0, 0.58, 0]), '#93d868')
   ];
   for (let f = 0; f < 7; f++) {
     const fa = (f / 7) * Math.PI * 2;
@@ -155,7 +157,7 @@ function buildPalmsCatalog(): Pick<
       [1, 1, 0.48]
     );
     frond.rotateY(fa);
-    arecaCrownParts.push(colorizeGeo(frond, f % 2 === 0 ? '#2f6a4f' : '#3d805f'));
+    arecaCrownParts.push(colorizeGeo(frond, f % 2 === 0 ? '#58b043' : '#78c957'));
   }
 
   return {
@@ -172,9 +174,9 @@ function buildCanopyAndEmergentCatalog(): Pick<
 > {
   // Ancient Banyan (Cây Đa cổ thụ) with buttresses, boughs & hanging aerial roots
   const canopyTrunkParts: THREE.BufferGeometry[] = [
-    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.25, 0.40, 2.48, 6), [0, 1.24, 0]), '#573c28'),
-    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.22, 1.0, 4), [0.38, 2.55, 0.12], [0, 0, -0.56]), '#4c3422'),
-    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.20, 1.0, 4), [-0.36, 2.6, -0.16], [0.22, 0, 0.52]), '#4c3422')
+    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.25, 0.40, 2.48, 6), [0, 1.24, 0]), '#8c6340'),
+    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.22, 1.0, 4), [0.38, 2.55, 0.12], [0, 0, -0.56]), '#7a5636'),
+    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.20, 1.0, 4), [-0.36, 2.6, -0.16], [0.22, 0, 0.52]), '#7a5636')
   ];
   for (let r = 0; r < 4; r++) {
     const ra = (r / 4) * Math.PI * 2 + 0.3;
@@ -185,7 +187,7 @@ function buildCanopyAndEmergentCatalog(): Pick<
           [Math.cos(ra) * 0.38, 0.34, Math.sin(ra) * 0.38],
           [Math.sin(ra) * 0.45, ra, -Math.cos(ra) * 0.45]
         ),
-        '#432e1e'
+        '#6f4c30'
       )
     );
     // Hanging aerial roots (rễ phụ) dropping down from outer canopy boughs
@@ -196,21 +198,21 @@ function buildCanopyAndEmergentCatalog(): Pick<
           [Math.cos(ra + 0.4) * 1.05, 1.38, Math.sin(ra + 0.4) * 1.05],
           [0.04, 0, -0.04]
         ),
-        '#5d432e'
+        '#a07a52'
       )
     );
   }
   const canopyCrownParts: THREE.BufferGeometry[] = [
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.5, 0), [0, 0.35, 0], [0, 0.2, 0], [1.32, 0.72, 1.24]), '#1f4a3a'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.18, 0), [-0.9, 0.15, 0.36], [0, 0.6, 0], [1.2, 0.68, 1.12]), '#2a5f49'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.12, 0), [0.88, 0.22, -0.34], [0, 1.1, 0], [1.16, 0.66, 1.12]), '#275945'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.02, 0), [0.05, 0.92, 0.15], [0, 0.4, 0], [1.22, 0.64, 1.16]), '#357458'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.75, 0), [0.15, 0.05, 0.85], [0, 0.8, 0], [1.08, 0.56, 1.02]), '#3e8461')
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.5, 0), [0, 0.35, 0], [0, 0.2, 0], [1.32, 0.72, 1.24]), '#3d7a34'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.18, 0), [-0.9, 0.15, 0.36], [0, 0.6, 0], [1.2, 0.68, 1.12]), '#4f9440'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.12, 0), [0.88, 0.22, -0.34], [0, 1.1, 0], [1.16, 0.66, 1.12]), '#468a3a'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.02, 0), [0.05, 0.92, 0.15], [0, 0.4, 0], [1.22, 0.64, 1.16]), '#69a846'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.75, 0), [0.15, 0.05, 0.85], [0, 0.8, 0], [1.08, 0.56, 1.02]), '#86bd52')
   ];
 
   // Tall emergent Rainforest Dipterocarp / Giant Chò Chỉ
   const dipterocarpTrunkParts: THREE.BufferGeometry[] = [
-    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.17, 0.32, 4.9, 6), [0, 2.45, 0]), '#614631')
+    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.17, 0.32, 4.9, 6), [0, 2.45, 0]), '#a89478')
   ];
   for (let b = 0; b < 3; b++) {
     const ba = (b / 3) * Math.PI * 2 + 0.2;
@@ -221,7 +223,7 @@ function buildCanopyAndEmergentCatalog(): Pick<
           [Math.cos(ba) * 0.35, 0.52, Math.sin(ba) * 0.35],
           [Math.sin(ba) * 0.38, ba, -Math.cos(ba) * 0.38]
         ),
-        '#4e3726'
+        '#8a7860'
       ),
       colorizeGeo(
         transformGeo(
@@ -229,29 +231,29 @@ function buildCanopyAndEmergentCatalog(): Pick<
           [Math.cos(ba) * 0.42, 4.65, Math.sin(ba) * 0.42],
           [-Math.sin(ba) * 0.72, ba, Math.cos(ba) * 0.72]
         ),
-        '#573e2a'
+        '#97836a'
       )
     );
   }
   const dipterocarpCrownParts: THREE.BufferGeometry[] = [
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.65, 0), [0, 0.18, 0], [0, 0.2, 0], [1.45, 0.52, 1.38]), '#1b4737'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.12, 0), [1.18, 0.08, 0.42], [0, 0.7, 0], [1.18, 0.48, 1.1]), '#266149'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.08, 0), [-1.1, 0.12, -0.46], [0, 1.2, 0], [1.15, 0.46, 1.08]), '#296b4f'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.02, 0), [0.1, 0.2, -1.08], [0, 1.9, 0], [1.1, 0.48, 1.05]), '#2d7354'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.95, 0), [0.08, 0.65, 0.1], [0, 0.5, 0], [1.28, 0.48, 1.22]), '#3c8c62')
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.65, 0), [0, 0.18, 0], [0, 0.2, 0], [1.45, 0.52, 1.38]), '#1f6e4c'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.12, 0), [1.18, 0.08, 0.42], [0, 0.7, 0], [1.18, 0.48, 1.1]), '#2a8460'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.08, 0), [-1.1, 0.12, -0.46], [0, 1.2, 0], [1.15, 0.46, 1.08]), '#2f9468'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(1.02, 0), [0.1, 0.2, -1.08], [0, 1.9, 0], [1.1, 0.48, 1.05]), '#38a373'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.95, 0), [0.08, 0.65, 0.1], [0, 0.5, 0], [1.28, 0.48, 1.22]), '#4dba84')
   ];
 
   // Windswept Night 3 Highland Mountain Pine / Pơ-mu
   const highlandTrunk = mergeParts([
-    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.16, 0.29, 2.85, 6), [0.12, 1.4, 0], [0, 0, -0.09]), '#4a3224'),
-    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.14, 0.9, 4), [0.44, 2.35, 0.12], [0.2, 0, -0.65]), '#3d281c'),
-    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.12, 0.75, 3), [-0.26, 2.1, -0.14], [-0.15, 0, 0.68]), '#452e20')
+    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.16, 0.29, 2.85, 6), [0.12, 1.4, 0], [0, 0, -0.09]), '#86493a'),
+    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.14, 0.9, 4), [0.44, 2.35, 0.12], [0.2, 0, -0.65]), '#6e3b2e'),
+    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.12, 0.75, 3), [-0.26, 2.1, -0.14], [-0.15, 0, 0.68]), '#7c4636')
   ]);
   const highlandCrownParts: THREE.BufferGeometry[] = [
-    colorizeGeo(transformGeo(new THREE.ConeGeometry(1.62, 1.45, 6), [0.15, 0.18, 0], [0, 0, -0.08]), '#1d4036'),
-    colorizeGeo(transformGeo(new THREE.ConeGeometry(1.24, 1.35, 6), [0.25, 1.08, 0], [0, 0.4, -0.1]), '#255043'),
-    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.84, 1.15, 6), [0.34, 1.88, 0], [0, 0.8, -0.12]), '#2f6553'),
-    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.46, 0.8, 5), [0.42, 2.52, 0], [0, 1.2, -0.14]), '#3c7a64')
+    colorizeGeo(transformGeo(new THREE.ConeGeometry(1.62, 1.45, 6), [0.15, 0.18, 0], [0, 0, -0.08]), '#2a6a5a'),
+    colorizeGeo(transformGeo(new THREE.ConeGeometry(1.24, 1.35, 6), [0.25, 1.08, 0], [0, 0.4, -0.1]), '#318070'),
+    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.84, 1.15, 6), [0.34, 1.88, 0], [0, 0.8, -0.12]), '#3d9482'),
+    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.46, 0.8, 5), [0.42, 2.52, 0], [0, 1.2, -0.14]), '#52ab96')
   ];
 
   return {
@@ -270,7 +272,7 @@ function buildUnderstoryTreesCatalog(): Pick<
 > {
   // Coastal Mangrove (Cây Đước) with arched stilt prop roots
   const mangroveParts: THREE.BufferGeometry[] = [
-    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.11, 0.16, 1.85, 5), [0, 1.55, 0]), '#574332')
+    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.11, 0.16, 1.85, 5), [0, 1.55, 0]), '#8a5a40')
   ];
   for (let r = 0; r < 5; r++) {
     const ra = (r / 5) * Math.PI * 2;
@@ -281,29 +283,29 @@ function buildUnderstoryTreesCatalog(): Pick<
           [Math.cos(ra) * 0.42, 0.56, Math.sin(ra) * 0.42],
           [Math.sin(ra) * 0.52, ra, -Math.cos(ra) * 0.52]
         ),
-        r % 2 === 0 ? '#4d3a2b' : '#5e4836'
+        r % 2 === 0 ? '#7a4d36' : '#96654a'
       )
     );
   }
   mangroveParts.push(
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.95, 0), [0, 2.55, 0], [0, 0.2, 0], [1.22, 0.65, 1.18]), '#235942'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.75, 0), [0.55, 2.35, 0.2], [0, 0.8, 0], [1.1, 0.62, 1.05]), '#2e6e50'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.72, 0), [-0.5, 2.45, -0.22], [0, 1.4, 0], [1.05, 0.62, 1.1]), '#377f5b')
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.95, 0), [0, 2.55, 0], [0, 0.2, 0], [1.22, 0.65, 1.18]), '#56913a'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.75, 0), [0.55, 2.35, 0.2], [0, 0.8, 0], [1.1, 0.62, 1.05]), '#6fa842'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.72, 0), [-0.5, 2.45, -0.22], [0, 1.4, 0], [1.05, 0.62, 1.1]), '#88bd4c')
   );
 
   // Young understory rainforest Sapling (Cây con)
   const saplingParts: THREE.BufferGeometry[] = [
-    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.045, 0.08, 1.48, 4), [0, 0.74, 0]), '#6e523a'),
-    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.025, 0.035, 0.58, 3), [0.16, 1.15, 0.05], [0, 0, -0.52]), '#614832'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.54, 0), [0, 1.65, 0], [0, 0.3, 0], [1.1, 0.85, 1.05]), '#367d54'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.42, 0), [0.34, 1.4, 0.12], [0, 0.9, 0], [1.0, 0.8, 1.0]), '#469967'),
-    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.38, 0), [-0.28, 1.32, -0.16], [0, 1.5, 0], [1.0, 0.75, 0.95]), '#52ad73')
+    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.045, 0.08, 1.48, 4), [0, 0.74, 0]), '#9c7650'),
+    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.025, 0.035, 0.58, 3), [0.16, 1.15, 0.05], [0, 0, -0.52]), '#8a6642'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.54, 0), [0, 1.65, 0], [0, 0.3, 0], [1.1, 0.85, 1.05]), '#5fb049'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.42, 0), [0.34, 1.4, 0.12], [0, 0.9, 0], [1.0, 0.8, 1.0]), '#74c455'),
+    colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.38, 0), [-0.28, 1.32, -0.16], [0, 1.5, 0], [1.0, 0.75, 0.95]), '#8ad862')
   ];
 
   // Ancient Tree Fern (Cây Dương Xỉ Thân Gỗ / Ráng Cổ Thụ)
   const treeFernParts: THREE.BufferGeometry[] = [
-    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.085, 0.145, 1.65, 5), [0, 0.82, 0]), '#473326'),
-    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.15, 0.25, 5), [0, 1.66, 0]), '#3b4a2e')
+    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.085, 0.145, 1.65, 5), [0, 0.82, 0]), '#6b4a35'),
+    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.15, 0.25, 5), [0, 1.66, 0]), '#7d7a3a')
   ];
   for (let f = 0; f < 7; f++) {
     const fa = (f / 7) * Math.PI * 2;
@@ -314,7 +316,7 @@ function buildUnderstoryTreesCatalog(): Pick<
       [0.24, 1, 1.05]
     );
     frond.rotateY(fa);
-    treeFernParts.push(colorizeGeo(frond, f % 2 === 0 ? '#2f704e' : '#408f62'));
+    treeFernParts.push(colorizeGeo(frond, f % 2 === 0 ? '#3f9a4a' : '#5cb85a'));
   }
   for (let f = 0; f < 4; f++) {
     const fa = (f / 4) * Math.PI * 2 + 0.35;
@@ -325,7 +327,7 @@ function buildUnderstoryTreesCatalog(): Pick<
       [0.25, 1, 1.0]
     );
     inner.rotateY(fa);
-    treeFernParts.push(colorizeGeo(inner, '#55ad73'));
+    treeFernParts.push(colorizeGeo(inner, '#7ed06a'));
   }
 
   // Tall Graceful Vietnamese Bamboo Grove (Bụi Tre Trúc Cao)
@@ -342,7 +344,7 @@ function buildUnderstoryTreesCatalog(): Pick<
     bambooParts.push(
       colorizeGeo(
         transformGeo(new THREE.CylinderGeometry(0.042, 0.068, h, 4), [cx, h * 0.5, cz], [tilt, 0, -tilt * 0.85]),
-        i % 2 === 0 ? '#3f7848' : '#528f57'
+        i % 2 === 0 ? '#b5c25e' : '#9fb84e'
       ),
       colorizeGeo(
         transformGeo(
@@ -350,14 +352,14 @@ function buildUnderstoryTreesCatalog(): Pick<
           [cx - tilt * 0.65, h * 0.94, cz + tilt * 0.65],
           [0, i * 0.85, 0]
         ),
-        i % 2 === 0 ? '#2e6340' : '#3a7a4d'
+        i % 2 === 0 ? '#3e8a45' : '#58a94e'
       )
     );
     if (i < 3) {
       bambooParts.push(
         colorizeGeo(
           transformGeo(new THREE.ConeGeometry(0.38, 0.78, 3), [cx - tilt * 0.3, h * 0.68, cz + tilt * 0.3], [0.15, i * 1.1, 0]),
-          '#3d8052'
+          '#6dba58'
         )
       );
     }
@@ -387,7 +389,7 @@ export function createTropicalAssetCatalog(night: NightId): TropicalAssetCatalog
     const ba = (b / 5) * Math.PI * 2 + 0.2;
     const stalk = transformGeo(new THREE.CylinderGeometry(0.045, 0.065, 0.82, 3), [0.1, 0.4, 0], [0, 0, -0.26]);
     stalk.rotateY(ba);
-    bananaParts.push(colorizeGeo(stalk, '#487a4e'));
+    bananaParts.push(colorizeGeo(stalk, '#8aa850'));
 
     const leaf = transformGeo(
       new THREE.BoxGeometry(1.18, 0.04, 0.46),
@@ -395,30 +397,30 @@ export function createTropicalAssetCatalog(night: NightId): TropicalAssetCatalog
       [0, 0, 0.42]
     );
     leaf.rotateY(ba);
-    bananaParts.push(colorizeGeo(leaf, b % 2 === 0 ? '#3e8a5e' : '#53a670'));
+    bananaParts.push(colorizeGeo(leaf, b % 2 === 0 ? '#4aa84a' : '#72c25a'));
   }
 
   // Coastal Spiky Pandanus / Screw Pine Shrub (Cây Dứa Dại)
   const pandanusParts: THREE.BufferGeometry[] = [
-    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.10, 0.14, 0.52, 4), [0, 0.25, 0]), '#5c4b39')
+    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.10, 0.14, 0.52, 4), [0, 0.25, 0]), '#8f7552')
   ];
   for (let p = 0; p < 8; p++) {
     const pa = (p / 8) * Math.PI * 2;
     const blade = transformGeo(new THREE.ConeGeometry(0.11, 0.96, 3), [0.34, 0.52, 0], [0, 0, -0.85], [0.28, 1, 1]);
     blade.rotateY(pa);
-    pandanusParts.push(colorizeGeo(blade, p % 2 === 0 ? '#347351' : '#4a8f63'));
+    pandanusParts.push(colorizeGeo(blade, p % 2 === 0 ? '#3c9348' : '#62ad54'));
   }
   for (let p = 0; p < 5; p++) {
     const pa = (p / 5) * Math.PI * 2 + 0.3;
     const inner = transformGeo(new THREE.ConeGeometry(0.08, 0.74, 3), [0.16, 0.64, 0], [0, 0, -0.35], [0.28, 1, 1]);
     inner.rotateY(pa);
-    pandanusParts.push(colorizeGeo(inner, '#5ca874'));
+    pandanusParts.push(colorizeGeo(inner, '#86c765'));
   }
 
   // Fallen Mossy Log with Shelf Mushrooms (Khúc Gỗ Mục Phủ Rêu)
   const mossLog = mergeParts([
-    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.24, 0.29, 2.55, 5), [0, 0.16, 0], [0, 0, Math.PI * 0.5]), '#4f3827'),
-    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.12, 0.62, 4), [0.58, 0.36, 0.14], [0.35, 0, -0.45]), '#453021'),
+    colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.24, 0.29, 2.55, 5), [0, 0.16, 0], [0, 0, Math.PI * 0.5]), '#77563a'),
+    colorizeGeo(transformGeo(new THREE.ConeGeometry(0.12, 0.62, 4), [0.58, 0.36, 0.14], [0.35, 0, -0.45]), '#654630'),
     colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.25, 0), [-0.35, 0.32, 0.04], [0, 0.4, 0], [1.4, 0.42, 0.9]), '#336b4b'),
     colorizeGeo(transformGeo(new THREE.IcosahedronGeometry(0.22, 0), [0.32, 0.3, -0.05], [0, 1.0, 0], [1.2, 0.4, 0.85]), '#448259'),
     colorizeGeo(transformGeo(new THREE.CylinderGeometry(0.11, 0.08, 0.04, 4), [-0.05, 0.33, 0.22], [0.2, 0, 0]), '#d9c49e'),
@@ -436,7 +438,7 @@ export function createTropicalAssetCatalog(night: NightId): TropicalAssetCatalog
       [0.22, 1, 1.05]
     );
     frond.rotateY(fa);
-    fernParts.push(colorizeGeo(frond, f % 2 === 0 ? '#2b5e49' : '#3e7d5e'));
+    fernParts.push(colorizeGeo(frond, f % 2 === 0 ? '#3b8a44' : '#5aaa52'));
   }
 
   const mossBoulder = mergeParts([
@@ -458,7 +460,7 @@ export function createTropicalAssetCatalog(night: NightId): TropicalAssetCatalog
       [Math.sin(ga) * 0.32, ga, -Math.cos(ga) * 0.32],
       [0.35, 1, 1]
     );
-    smallGrassParts.push(colorizeGeo(blade, g % 2 === 0 ? '#377057' : '#4a8f6d'));
+    smallGrassParts.push(colorizeGeo(blade, g % 2 === 0 ? '#4c9a46' : '#6ab458'));
   }
 
   const tallGrassParts: THREE.BufferGeometry[] = [];
@@ -470,7 +472,7 @@ export function createTropicalAssetCatalog(night: NightId): TropicalAssetCatalog
       [Math.sin(ga) * 0.28, ga, -Math.cos(ga) * 0.28],
       [0.3, 1, 1]
     );
-    tallGrassParts.push(colorizeGeo(reed, g % 2 === 0 ? '#3b7357' : '#4e8a66'));
+    tallGrassParts.push(colorizeGeo(reed, g % 2 === 0 ? '#5a9e48' : '#78b858'));
     if (g < 2) {
       const plume = transformGeo(
         new THREE.ConeGeometry(0.055, 0.26, 3),
@@ -588,9 +590,10 @@ export function generateTropicalPlacementPlan(night: NightId): NightPlacementPla
     yaw: number,
     scale: number,
     crownOffset: [number, number, number],
-    solidSpacing = 0
+    solidSpacing = 0,
+    yOverride?: number
   ) => {
-    const y = sampleIslandElevation(night, cx, radius, x, z);
+    const y = yOverride ?? sampleIslandElevation(night, cx, radius, x, z);
     if (solidSpacing > 0 && !isHardSafeSolid(x, y, z)) return false;
     const cosY = Math.cos(yaw);
     const sinY = Math.sin(yaw);
@@ -671,104 +674,204 @@ export function generateTropicalPlacementPlan(night: NightId): NightPlacementPla
     }
   };
 
+  type Spec = [
+    keyof NightPlacementPlan,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    [number, number, number]?,
+    boolean?,
+    number?
+  ];
+  const DIP: [number, number, number] = [0, DIPTEROCARP_CROWN_Y, 0];
+  const CAN: [number, number, number] = [0, 2.5, 0];
+  const COC: [number, number, number] = [COCONUT_TIP_X, COCONUT_TIP_Y, 0];
+  const ARE: [number, number, number] = [0, 4.4, 0];
+  const HIG: [number, number, number] = [0.16, 2.6, 0];
+
+  // [layer, count, rMin, rMax, clearanceMargin, scaleMin, scaleMax, crownOffset, outward, trunkSpacing]
+  const treeSpecs: Spec[] =
+    night === 1
+      ? [
+          ['dipterocarpTrees', 52, 0.34, 0.9, 0.35, 1.0, 1.9, DIP, false, 1.7],
+          ['canopyTrees', 58, 0.3, 0.92, 0.35, 0.8, 1.6, CAN, false, 1.5],
+          ['coconutPalms', 40, 0.6, 0.95, 0.3, 0.8, 1.5, COC, true, 1.2],
+          ['mangroves', 34, 0.74, 0.96, 0.1, 0.85, 1.45, undefined, false, 1.1],
+          ['arecaPalms', 30, 0.32, 0.88, 0.35, 0.8, 1.45, ARE, false, 1.0],
+          ['bambooClumps', 62, 0.36, 0.95, -0.1, 0.8, 1.55, undefined, false, 0.9],
+          ['treeFerns', 52, 0.22, 0.94, -0.3, 0.75, 1.45, undefined, false, 0.8],
+          ['saplings', 84, 0.18, 0.95, -0.4, 0.5, 0.95, undefined, false, 0.65]
+        ]
+      : night === 2
+        ? [
+            ['arecaPalms', 28, 0.4, 0.92, 0.3, 0.85, 1.5, ARE, false, 1.0],
+            ['dipterocarpTrees', 16, 0.44, 0.9, 0.3, 1.0, 1.75, DIP, false, 1.6],
+            ['canopyTrees', 20, 0.4, 0.9, 0.3, 0.8, 1.5, CAN, false, 1.4],
+            ['coconutPalms', 14, 0.64, 0.94, 0.3, 0.8, 1.4, COC, true, 1.2],
+            ['mangroves', 14, 0.72, 0.96, 0.1, 0.85, 1.4, undefined, false, 1.1],
+            ['bambooClumps', 26, 0.4, 0.94, -0.1, 0.8, 1.5, undefined, false, 0.9],
+            ['treeFerns', 22, 0.24, 0.93, -0.3, 0.75, 1.4, undefined, false, 0.8],
+            ['saplings', 34, 0.2, 0.94, -0.4, 0.5, 0.92, undefined, false, 0.65]
+          ]
+        : [
+            ['highlandTrees', 64, 0.58, 0.95, 0.3, 0.88, 1.7, HIG, false, 1.5],
+            ['dipterocarpTrees', 34, 0.58, 0.93, 0.35, 1.0, 1.9, DIP, false, 1.7],
+            ['canopyTrees', 36, 0.58, 0.92, 0.35, 0.8, 1.55, CAN, false, 1.5],
+            ['bambooClumps', 44, 0.58, 0.95, -0.1, 0.85, 1.55, undefined, false, 0.9],
+            ['treeFerns', 34, 0.58, 0.94, -0.3, 0.78, 1.45, undefined, false, 0.8],
+            ['saplings', 56, 0.58, 0.95, -0.4, 0.5, 0.95, undefined, false, 0.65]
+          ];
+  const underSpecs: Spec[] =
+    night === 1
+      ? [
+          ['bananaClumps', 70, 0.22, 0.93, -0.3, 0.78, 1.4],
+          ['pandanusShrubs', 60, 0.45, 0.95, -0.4, 0.72, 1.4],
+          ['mossLogs', 36, 0.28, 0.92, -0.2, 0.85, 1.4],
+          ['ferns', 150, 0.14, 0.95, -0.9, 0.8, 1.5],
+          ['boulders', 56, 0.22, 0.95, 0.3, 0.68, 1.7, undefined, false, 1.2],
+          ['pebbles', 100, 0.14, 0.95, -0.6, 0.7, 1.5],
+          ['grassSmall', 340, 0.14, 0.95, -1.3, 0.75, 1.55],
+          ['grassTall', 170, 0.24, 0.95, -0.9, 0.8, 1.5],
+          ['flowers', 130, 0.14, 0.94, -0.8, 0.8, 1.45]
+        ]
+      : night === 2
+        ? [
+            ['bananaClumps', 30, 0.22, 0.93, -0.3, 0.8, 1.35],
+            ['pandanusShrubs', 26, 0.45, 0.95, -0.4, 0.75, 1.35],
+            ['mossLogs', 14, 0.28, 0.91, -0.2, 0.82, 1.3],
+            ['ferns', 62, 0.14, 0.94, -0.9, 0.8, 1.4],
+            ['boulders', 24, 0.24, 0.95, 0.3, 0.68, 1.55, undefined, false, 1.2],
+            ['pebbles', 44, 0.14, 0.95, -0.6, 0.72, 1.4],
+            ['grassSmall', 150, 0.14, 0.95, -1.3, 0.78, 1.5],
+            ['grassTall', 76, 0.26, 0.95, -0.9, 0.8, 1.45],
+            ['flowers', 58, 0.14, 0.94, -0.8, 0.8, 1.4]
+          ]
+        : [
+            ['bananaClumps', 36, 0.58, 0.93, -0.3, 0.8, 1.35],
+            ['pandanusShrubs', 40, 0.58, 0.95, -0.4, 0.75, 1.4],
+            ['mossLogs', 26, 0.58, 0.93, -0.2, 0.85, 1.4],
+            ['ferns', 84, 0.58, 0.95, -0.9, 0.82, 1.45],
+            ['boulders', 48, 0.58, 0.96, 0.3, 0.72, 1.75, undefined, false, 1.2],
+            ['pebbles', 76, 0.58, 0.96, -0.6, 0.72, 1.4],
+            ['grassSmall', 250, 0.58, 0.96, -1.3, 0.78, 1.5],
+            ['grassTall', 120, 0.58, 0.96, -0.9, 0.82, 1.45],
+            ['flowers', 90, 0.58, 0.95, -0.8, 0.82, 1.4]
+          ];
+
+  const runSpec = (spec: Spec, cx: number, r: number) => {
+    const [layer, count, rMin, rMax, margin, sMin, sMax, crown, outward, spacing] = spec;
+    tryPlace(plan[layer], count, cx, r, rMin, rMax, margin, sMin, sMax, crown ?? [0, 0, 0], outward ?? false, spacing ?? 0);
+  };
+
   for (const { cx, r } of discs) {
-    if (night === 1) {
-      tryPlace(plan.dipterocarpTrees, 20, cx, r, 0.38, 0.88, 0.85, 1.05, 1.82, [0, DIPTEROCARP_CROWN_Y, 0], false, 2.2);
-      tryPlace(plan.canopyTrees, 22, cx, r, 0.34, 0.90, 0.85, 0.84, 1.54, [0, 2.5, 0], false, 2.0);
-      tryPlace(plan.coconutPalms, 24, cx, r, 0.65, 0.94, 0.72, 0.82, 1.48, [COCONUT_TIP_X, COCONUT_TIP_Y, 0], true, 1.6);
-      tryPlace(plan.mangroves, 14, cx, r, 0.78, 0.94, 0.45, 0.85, 1.38, [0, 0, 0], false, 1.5);
-      tryPlace(plan.arecaPalms, 10, cx, r, 0.36, 0.85, 0.75, 0.82, 1.35, [0, 4.4, 0], false, 1.4);
-      tryPlace(plan.bambooClumps, 20, cx, r, 0.44, 0.93, 0.35, 0.82, 1.42, [0, 0, 0], false, 1.2);
-      tryPlace(plan.treeFerns, 14, cx, r, 0.28, 0.92, 0.25, 0.78, 1.38, [0, 0, 0], false, 1.0);
-      tryPlace(plan.saplings, 18, cx, r, 0.18, 0.93, 0.20, 0.52, 0.88, [0, 0, 0], false, 0.9);
+    for (const spec of treeSpecs) runSpec(spec, cx, r);
 
-      // Build dense multi-story grove clusters under big tree trunks
-      const groveAnchors = [...plan.dipterocarpTrees, ...plan.canopyTrees];
-      for (const a of groveAnchors) {
-        clusterAroundAnchor(a, cx, r, plan.saplings, 1, 1.6, 3.8, 0.2, 0.52, 0.84, 0.85);
-        clusterAroundAnchor(a, cx, r, plan.treeFerns, 1, 1.4, 3.4, 0.15, 0.82, 1.32, 0.85);
-        clusterAroundAnchor(a, cx, r, plan.ferns, 2, 1.0, 3.5, -0.35, 0.8, 1.45);
-        clusterAroundAnchor(a, cx, r, plan.grassSmall, 2, 0.9, 3.8, -0.55, 0.85, 1.45);
-      }
-
-      tryPlace(plan.bananaClumps, 30, cx, r, 0.24, 0.92, 0.15, 0.78, 1.35);
-      tryPlace(plan.pandanusShrubs, 28, cx, r, 0.48, 0.94, 0.1, 0.72, 1.38);
-      tryPlace(plan.mossLogs, 16, cx, r, 0.28, 0.91, 0.2, 0.85, 1.35);
-      tryPlace(plan.ferns, 50, cx, r, 0.16, 0.94, -0.35, 0.8, 1.45);
-      tryPlace(plan.boulders, 32, cx, r, 0.22, 0.94, 0.65, 0.68, 1.62, [0, 0, 0], false, 1.3);
-      tryPlace(plan.pebbles, 65, cx, r, 0.14, 0.95, -0.5, 0.7, 1.45);
-      tryPlace(plan.grassSmall, 185, cx, r, 0.14, 0.95, -0.65, 0.75, 1.5);
-      tryPlace(plan.grassTall, 96, cx, r, 0.24, 0.95, -0.35, 0.8, 1.45);
-      tryPlace(plan.flowers, 82, cx, r, 0.14, 0.93, -0.55, 0.8, 1.4);
-    } else if (night === 2) {
-      tryPlace(plan.arecaPalms, 17, cx, r, 0.42, 0.92, 0.68, 0.85, 1.45, [0, 4.4, 0], false, 1.35);
-      tryPlace(plan.dipterocarpTrees, 8, cx, r, 0.48, 0.88, 0.82, 1.0, 1.68, [0, DIPTEROCARP_CROWN_Y, 0], false, 2.0);
-      tryPlace(plan.canopyTrees, 9, cx, r, 0.42, 0.88, 0.82, 0.82, 1.42, [0, 2.48, 0], false, 1.85);
-      tryPlace(plan.coconutPalms, 7, cx, r, 0.66, 0.93, 0.68, 0.82, 1.36, [COCONUT_TIP_X, COCONUT_TIP_Y, 0], true, 1.5);
-      tryPlace(plan.mangroves, 7, cx, r, 0.74, 0.94, 0.4, 0.85, 1.35, [0, 0, 0], false, 1.4);
-      tryPlace(plan.bambooClumps, 9, cx, r, 0.45, 0.93, 0.35, 0.82, 1.38, [0, 0, 0], false, 1.1);
-      tryPlace(plan.treeFerns, 8, cx, r, 0.30, 0.92, 0.2, 0.78, 1.35, [0, 0, 0], false, 0.9);
-      tryPlace(plan.saplings, 8, cx, r, 0.25, 0.92, 0.15, 0.52, 0.86, [0, 0, 0], false, 0.85);
-
-      const discAnchors = [...plan.canopyTrees, ...plan.dipterocarpTrees].filter((a) => Math.hypot(a.x - cx, a.z) <= r + 1);
-      for (const a of discAnchors) {
-        clusterAroundAnchor(a, cx, r, plan.saplings, 1, 1.4, 3.2, 0.15, 0.52, 0.82, 0.8);
-        clusterAroundAnchor(a, cx, r, plan.ferns, 2, 1.0, 3.0, -0.35, 0.8, 1.35);
-      }
-
-      tryPlace(plan.bananaClumps, 14, cx, r, 0.28, 0.92, 0.15, 0.8, 1.3);
-      tryPlace(plan.pandanusShrubs, 12, cx, r, 0.54, 0.94, 0.1, 0.75, 1.32);
-      tryPlace(plan.mossLogs, 7, cx, r, 0.32, 0.90, 0.2, 0.82, 1.28);
-      tryPlace(plan.ferns, 22, cx, r, 0.20, 0.93, -0.4, 0.8, 1.35);
-      tryPlace(plan.boulders, 15, cx, r, 0.32, 0.94, 0.65, 0.68, 1.48, [0, 0, 0], false, 1.2);
-      tryPlace(plan.pebbles, 26, cx, r, 0.16, 0.95, -0.5, 0.72, 1.35);
-      tryPlace(plan.grassSmall, 85, cx, r, 0.15, 0.94, -0.65, 0.78, 1.45);
-      tryPlace(plan.grassTall, 38, cx, r, 0.34, 0.95, -0.4, 0.8, 1.38);
-      tryPlace(plan.flowers, 32, cx, r, 0.16, 0.93, -0.55, 0.8, 1.35);
-    } else {
-      tryPlace(plan.highlandTrees, 28, cx, r, 0.60, 0.94, 0.82, 0.88, 1.62, [0.16, 2.6, 0], false, 1.95);
-      tryPlace(plan.dipterocarpTrees, 16, cx, r, 0.62, 0.92, 0.85, 1.05, 1.85, [0, DIPTEROCARP_CROWN_Y, 0], false, 2.2);
-      tryPlace(plan.canopyTrees, 16, cx, r, 0.60, 0.91, 0.85, 0.84, 1.48, [0, 2.5, 0], false, 1.95);
-      tryPlace(plan.bambooClumps, 20, cx, r, 0.60, 0.94, 0.35, 0.85, 1.45, [0, 0, 0], false, 1.15);
-      tryPlace(plan.treeFerns, 16, cx, r, 0.59, 0.93, 0.2, 0.80, 1.38, [0, 0, 0], false, 0.95);
-      tryPlace(plan.saplings, 18, cx, r, 0.59, 0.94, 0.15, 0.52, 0.88, [0, 0, 0], false, 0.85);
-
-      const n3Anchors = [...plan.highlandTrees, ...plan.dipterocarpTrees];
-      for (const a of n3Anchors) {
-        clusterAroundAnchor(a, cx, r, plan.saplings, 1, 1.5, 3.6, 0.15, 0.52, 0.84, 0.85);
-        clusterAroundAnchor(a, cx, r, plan.ferns, 1, 1.1, 3.2, -0.35, 0.85, 1.35);
-      }
-
-      tryPlace(plan.bananaClumps, 20, cx, r, 0.58, 0.92, 0.15, 0.8, 1.32);
-      tryPlace(plan.pandanusShrubs, 22, cx, r, 0.60, 0.94, 0.1, 0.75, 1.35);
-      tryPlace(plan.mossLogs, 14, cx, r, 0.59, 0.92, 0.2, 0.85, 1.35);
-      tryPlace(plan.ferns, 36, cx, r, 0.58, 0.94, -0.4, 0.82, 1.4);
-      tryPlace(plan.boulders, 32, cx, r, 0.56, 0.95, 0.65, 0.72, 1.68, [0, 0, 0], false, 1.3);
-      tryPlace(plan.pebbles, 46, cx, r, 0.52, 0.95, -0.5, 0.72, 1.38);
-      tryPlace(plan.grassSmall, 145, cx, r, 0.54, 0.95, -0.65, 0.78, 1.48);
-      tryPlace(plan.grassTall, 68, cx, r, 0.59, 0.96, -0.4, 0.82, 1.4);
-      tryPlace(plan.flowers, 46, cx, r, 0.55, 0.93, -0.55, 0.82, 1.35);
+    // Multi-story grove: saplings, tree ferns, ferns and grass crowd in under every big tree
+    const anchors = [...plan.dipterocarpTrees, ...plan.canopyTrees, ...plan.highlandTrees].filter(
+      (a) => Math.hypot(a.x - cx, a.z) <= r + 1
+    );
+    for (const a of anchors) {
+      clusterAroundAnchor(a, cx, r, plan.saplings, 2, 1.3, 3.8, -0.3, 0.5, 0.88, 0.6);
+      clusterAroundAnchor(a, cx, r, plan.treeFerns, 1, 1.2, 3.4, -0.2, 0.8, 1.35, 0.7);
+      clusterAroundAnchor(a, cx, r, plan.bananaClumps, 1, 1.4, 3.6, -0.3, 0.8, 1.3);
+      clusterAroundAnchor(a, cx, r, plan.ferns, 3, 0.9, 3.5, -0.9, 0.8, 1.45);
+      clusterAroundAnchor(a, cx, r, plan.grassSmall, 3, 0.8, 3.8, -1.3, 0.85, 1.5);
     }
+
+    for (const spec of underSpecs) runSpec(spec, cx, r);
   }
 
-  // Night 3 elevated sanctuary decor (Tier 1 Y=3 & Tier 2 Y=6 avoiding ramps/lamps/bell/motes)
+  // Night 3 elevated sanctuary terraces: Tier 1 (Y=3, r 12..24, z>0) and Tier 2 (Y=6, r<=8)
   if (night === 3) {
-    for (let i = 0; i < 14; i++) {
-      const a = (i / 14) * Math.PI * 0.84 + 0.25;
-      const r = i % 2 === 0 ? 22.2 : 14.2;
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
-      const nearMote = cfg.moteSpawnPoints.some((m) => Math.hypot(m[0] - x, m[2] - z) < 1.8);
-      const nearLamp = cfg.lanterns.some((l) => Math.hypot(l.pos[0] - x, l.pos[2] - z) < 3.4);
-      if (nearMote || nearLamp || Math.hypot(x, z - 13) < 2.6) continue;
-      plan.ferns.push({ x, y: 3.0, z, yaw: a, scale: 1.0, crownX: x, crownY: 3.0, crownZ: z, idx: plan.ferns.length });
-      if (i % 2 === 0) {
-        plan.flowers.push({ x: x + 0.5, y: 3.0, z: z - 0.3, yaw: -a, scale: 1.0, crownX: x, crownY: 3.0, crownZ: z, idx: plan.flowers.length });
+    const RAMP_DIRS = [(30 * Math.PI) / 180, (150 * Math.PI) / 180];
+    const tierOk = (tier: 1 | 2, x: number, z: number, y: number): boolean => {
+      const rr = Math.hypot(x, z);
+      if (tier === 1) {
+        if (rr < 13.0 || rr > 22.8 || z < 1.2) return false;
+        // keep jump-pad approach lane and the ramp entrances readable
+        if (Math.abs(x) < 3.2 && z > 6 && z < 16.5) return false;
+        for (const rad of RAMP_DIRS) {
+          const ux = Math.cos(rad);
+          const uz = Math.sin(rad);
+          const s = x * ux + z * uz;
+          const lat = Math.abs(-x * uz + z * ux);
+          if (s > 12 && lat < 3.0) return false;
+        }
+      } else {
+        if (rr < 3.3 || rr > 7.0) return false;
+        // jump-pad landing lane toward lantern L1 (0,6,6)
+        if (Math.abs(x) < 3.0 && z > 1.5) return false;
       }
-      if (i % 3 === 0) {
-        plan.pebbles.push({ x: x - 0.4, y: 3.0, z: z + 0.4, yaw: a * 2, scale: 0.95, crownX: x, crownY: 3.0, crownZ: z, idx: plan.pebbles.length });
+      for (const l of cfg.lanterns) {
+        if (Math.abs(l.pos[1] - y) < 1.5 && Math.hypot(x - l.pos[0], z - l.pos[2]) < 2.3) return false;
       }
-    }
+      for (const m of cfg.moteSpawnPoints) {
+        if (Math.abs(m[1] - y) < 1.5 && Math.hypot(x - m[0], z - m[2]) < 0.9) return false;
+      }
+      return true;
+    };
+    const placeTier = (
+      tier: 1 | 2,
+      layer: keyof NightPlacementPlan,
+      count: number,
+      sMin: number,
+      sMax: number,
+      crown: [number, number, number] = [0, 0, 0],
+      spacing = 0
+    ) => {
+      const y = tier === 1 ? 3.0 : 6.0;
+      const target = plan[layer];
+      let attempts = 0;
+      let added = 0;
+      while (added < count && attempts < count * 60) {
+        attempts++;
+        const rr = tier === 1 ? 13.0 + rng() * 9.8 : 3.3 + rng() * 3.7;
+        const ang = tier === 1 ? 0.04 + rng() * (Math.PI - 0.08) : rng() * Math.PI * 2;
+        const x = Math.cos(ang) * rr;
+        const z = Math.sin(ang) * rr;
+        if (!tierOk(tier, x, z, y)) continue;
+        if (spacing > 0 && isTooCloseToTrunk(x, z, spacing)) continue;
+        const scale = sMin + rng() * (sMax - sMin);
+        if (pushItem(target, 0, 45, x, z, rng() * Math.PI * 2, scale, crown, spacing, y)) added++;
+      }
+    };
+
+    // Tier 1 forest terrace
+    placeTier(1, 'highlandTrees', 16, 0.85, 1.3, HIG, 1.5);
+    placeTier(1, 'canopyTrees', 16, 0.8, 1.3, CAN, 1.5);
+    placeTier(1, 'dipterocarpTrees', 7, 0.9, 1.25, DIP, 1.7);
+    placeTier(1, 'arecaPalms', 8, 0.8, 1.15, ARE, 1.0);
+    placeTier(1, 'bambooClumps', 18, 0.8, 1.3, undefined, 0.9);
+    placeTier(1, 'treeFerns', 16, 0.8, 1.3, undefined, 0.8);
+    placeTier(1, 'saplings', 26, 0.5, 0.9, undefined, 0.65);
+    placeTier(1, 'bananaClumps', 14, 0.8, 1.2);
+    placeTier(1, 'pandanusShrubs', 12, 0.75, 1.2);
+    placeTier(1, 'mossLogs', 7, 0.85, 1.2);
+    placeTier(1, 'ferns', 44, 0.8, 1.4);
+    placeTier(1, 'boulders', 10, 0.7, 1.35, undefined, 1.2);
+    placeTier(1, 'pebbles', 22, 0.75, 1.3);
+    placeTier(1, 'grassSmall', 100, 0.8, 1.4);
+    placeTier(1, 'grassTall', 46, 0.85, 1.35);
+    placeTier(1, 'flowers', 44, 0.85, 1.3);
+
+    // Tier 2 summit garden around the bell tower
+    placeTier(2, 'highlandTrees', 5, 0.65, 0.95, HIG, 1.4);
+    placeTier(2, 'canopyTrees', 4, 0.65, 0.92, CAN, 1.4);
+    placeTier(2, 'bambooClumps', 6, 0.7, 1.0, undefined, 0.85);
+    placeTier(2, 'treeFerns', 7, 0.75, 1.1, undefined, 0.8);
+    placeTier(2, 'saplings', 9, 0.5, 0.8, undefined, 0.65);
+    placeTier(2, 'bananaClumps', 5, 0.75, 1.05);
+    placeTier(2, 'pandanusShrubs', 5, 0.7, 1.0);
+    placeTier(2, 'mossLogs', 2, 0.8, 1.0);
+    placeTier(2, 'ferns', 16, 0.75, 1.2);
+    placeTier(2, 'boulders', 4, 0.65, 1.0, undefined, 1.1);
+    placeTier(2, 'pebbles', 8, 0.75, 1.1);
+    placeTier(2, 'grassSmall', 34, 0.8, 1.3);
+    placeTier(2, 'grassTall', 14, 0.8, 1.2);
+    placeTier(2, 'flowers', 18, 0.8, 1.2);
   }
 
   // Night 2 floating lotus lagoon clusters flanking the bridge channel at water Y = -10.42
@@ -803,11 +906,22 @@ export function populateNightEcosystem(scene: THREE.Scene, night: NightId): Sway
   const plan = generateTropicalPlacementPlan(night);
   const dummy = new THREE.Object3D();
   const swayBatches: SwayBatch[] = [];
+  const tintRng = createRng(4242 + night);
+  const tintColor = new THREE.Color();
+  const nextTint = (): THREE.Color => {
+    const v = 0.78 + tintRng() * 0.38;
+    return tintColor.setRGB(
+      v * (0.9 + tintRng() * 0.2),
+      v * (0.92 + tintRng() * 0.16),
+      v * (0.88 + tintRng() * 0.22),
+      THREE.LinearSRGBColorSpace
+    );
+  };
 
   const lambertMat = new THREE.MeshLambertMaterial({
     vertexColors: true,
-    emissive: '#0c231a',
-    emissiveIntensity: 0.58,
+    emissive: '#1a1612',
+    emissiveIntensity: 0.5,
     flatShading: true
   });
 
@@ -824,8 +938,10 @@ export function populateNightEcosystem(scene: THREE.Scene, night: NightId): Sway
       dummy.scale.setScalar(it.scale);
       dummy.updateMatrix();
       inst.setMatrixAt(i, dummy.matrix);
+      inst.setColorAt(i, nextTint());
     }
     inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
     inst.matrixAutoUpdate = false;
     inst.updateMatrix();
     scene.add(inst);
@@ -852,13 +968,15 @@ export function populateNightEcosystem(scene: THREE.Scene, night: NightId): Sway
       dummy.scale.setScalar(it.scale);
       dummy.updateMatrix();
       crownInst.setMatrixAt(i, dummy.matrix);
-      swayItems.push({ x: it.crownX, y: it.crownY, z: it.crownZ, yaw: it.yaw, scale: it.scale, idx: i });
+      crownInst.setColorAt(i, nextTint());
+      swayItems.push({ x: it.crownX, y: it.crownY, z: it.crownZ, yaw: it.yaw, scale: it.scale, idx: i, vis: 1 });
     }
     crownInst.instanceMatrix.needsUpdate = true;
+    if (crownInst.instanceColor) crownInst.instanceColor.needsUpdate = true;
     crownInst.matrixAutoUpdate = false;
     crownInst.updateMatrix();
     scene.add(crownInst);
-    swayBatches.push({ inst: crownInst, items: swayItems, amplitude });
+    swayBatches.push({ inst: crownInst, items: swayItems, amplitude, occlude: true });
   };
 
   addTreeWithSwayCrown(cat.coconutTrunk, cat.coconutCrown, plan.coconutPalms, 0.045);
@@ -889,9 +1007,11 @@ export function populateNightEcosystem(scene: THREE.Scene, night: NightId): Sway
       dummy.scale.setScalar(it.scale);
       dummy.updateMatrix();
       reedInst.setMatrixAt(i, dummy.matrix);
-      reedSway.push({ x: it.x, y: it.y, z: it.z, yaw: it.yaw, scale: it.scale, idx: i });
+      reedInst.setColorAt(i, nextTint());
+      reedSway.push({ x: it.x, y: it.y, z: it.z, yaw: it.yaw, scale: it.scale, idx: i, vis: 1 });
     }
     reedInst.instanceMatrix.needsUpdate = true;
+    if (reedInst.instanceColor) reedInst.instanceColor.needsUpdate = true;
     reedInst.matrixAutoUpdate = false;
     reedInst.updateMatrix();
     scene.add(reedInst);

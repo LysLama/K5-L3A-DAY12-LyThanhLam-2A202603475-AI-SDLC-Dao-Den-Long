@@ -56,6 +56,8 @@ function computeReliefWeight(
     if (getRampHeightAt(wx, wz) !== null) return 0;
     const southVista = distToSegment2D(wx, wz, 0, 28, 0, 46);
     w = Math.min(w, smoothstep(4.2 + extraPad, 7.2 + extraPad, southVista));
+    // Keep a wider chase-camera lane behind the spawn free of tall canopy (obstacle placement only)
+    if (avoidMotesAndPaths) w = Math.min(w, smoothstep(7.5 + extraPad, 11.0 + extraPad, southVista));
   }
 
   // Pin Night 1 dock south corridor & Night 2 bridge ends
@@ -73,15 +75,16 @@ function computeReliefWeight(
   }
 
   // Pin lanterns, and optionally radial paths / motes / jump pads / charms
+  // Lanterns, jump pads & charms follow the terrain (rendered at ground lift), so they only
+  // reserve clearance for obstacle placement (avoidMotesAndPaths) and never carve flat pits.
   for (const l of cfg.lanterns) {
+    if (!avoidMotesAndPaths) break;
     if (l.pos[1] !== 0) continue;
     const lxDisc = getDiscCenterForNight(night, l.pos[0]);
     if (lxDisc !== centerX) continue;
     pinCircle(l.pos[0], l.pos[2], 3.2, 2.6);
-    if (avoidMotesAndPaths) {
-      const pathDist = distToSegment2D(wx, wz, spawnX, spawnZ, l.pos[0], l.pos[2]);
-      w = Math.min(w, smoothstep(2.2 + extraPad, 4.2 + extraPad, pathDist));
-    }
+    const pathDist = distToSegment2D(wx, wz, spawnX, spawnZ, l.pos[0], l.pos[2]);
+    w = Math.min(w, smoothstep(2.2 + extraPad, 4.2 + extraPad, pathDist));
   }
 
   if (avoidMotesAndPaths) {
@@ -91,13 +94,15 @@ function computeReliefWeight(
       pinCircle(m[0], m[2], 1.4, 1.6);
     }
   }
-  for (const jp of cfg.jumpPads) {
-    if (jp.pos[1] !== 0) continue;
-    pinCircle(jp.pos[0], jp.pos[2], 2.2, 2.0);
-  }
-  for (const c of cfg.charms) {
-    if (c.pos[1] !== 0) continue;
-    pinCircle(c.pos[0], c.pos[2], 2.4, 2.0);
+  if (avoidMotesAndPaths) {
+    for (const jp of cfg.jumpPads) {
+      if (jp.pos[1] !== 0) continue;
+      pinCircle(jp.pos[0], jp.pos[2], 2.2, 2.0);
+    }
+    for (const c of cfg.charms) {
+      if (c.pos[1] !== 0) continue;
+      pinCircle(c.pos[0], c.pos[2], 2.4, 2.0);
+    }
   }
 
   // Softly blend outer cliff lip down near shoreline so skirt/stone rim meets cleanly
@@ -113,6 +118,27 @@ function computeReliefWeight(
  * forest clearings and higher perimeter jungle bluffs.
  */
 export function sampleIslandElevation(
+  night: NightId,
+  centerX: number,
+  radius: number,
+  worldX: number,
+  worldZ: number
+): number {
+  const raw = rawIslandElevation(night, centerX, radius, worldX, worldZ);
+  // Each ground lantern gets a small level dais at its own natural hill height so the pedestal
+  // sits on the terrain (never in a pit nor floating) and blends smoothly back into the slope.
+  for (const l of getMapConfig(night).lanterns) {
+    if (l.pos[1] !== 0) continue;
+    if (getDiscCenterForNight(night, l.pos[0]) !== centerX) continue;
+    const d = Math.hypot(worldX - l.pos[0], worldZ - l.pos[2]);
+    if (d >= 5.5) continue;
+    const hL = rawIslandElevation(night, centerX, radius, l.pos[0], l.pos[2]);
+    return hL + (raw - hL) * smoothstep(2.4, 5.5, d);
+  }
+  return raw;
+}
+
+function rawIslandElevation(
   night: NightId,
   centerX: number,
   radius: number,

@@ -124,6 +124,57 @@ describe('dense Vietnamese tropical 3D jungle assets & multi-size scatterer', ()
     }
   });
 
+  it('grows an impenetrable-feeling rainforest and covers both Night 3 terraces with vegetation', () => {
+    const countAll = (plan: ReturnType<typeof generateTropicalPlacementPlan>) =>
+      Object.values(plan).reduce((a, b) => a + b.length, 0);
+    const p1 = generateTropicalPlacementPlan(1);
+    expect(countAll(p1)).toBeGreaterThanOrEqual(1800);
+    const p2 = generateTropicalPlacementPlan(2);
+    expect(countAll(p2)).toBeGreaterThanOrEqual(1400);
+    const p3 = generateTropicalPlacementPlan(3);
+    expect(countAll(p3)).toBeGreaterThanOrEqual(1300);
+
+    const onTier = (y: number) =>
+      Object.values(p3)
+        .flat()
+        .filter((it) => Math.abs(it.y - y) < 0.01).length;
+    expect(onTier(3.0)).toBeGreaterThanOrEqual(150);
+    expect(onTier(6.0)).toBeGreaterThanOrEqual(45);
+    const tier2Trees = [...p3.highlandTrees, ...p3.canopyTrees, ...p3.bambooClumps, ...p3.treeFerns].filter(
+      (it) => Math.abs(it.y - 6.0) < 0.01
+    );
+    expect(tier2Trees.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('keeps trunk and foliage colours clearly different (warm bark vs green leaves)', () => {
+    const cat = createTropicalAssetCatalog(1);
+    const avg = (g: THREE.BufferGeometry) => {
+      const c = g.getAttribute('color');
+      let r = 0;
+      let gr = 0;
+      let b = 0;
+      for (let i = 0; i < c.count; i++) {
+        r += c.getX(i);
+        gr += c.getY(i);
+        b += c.getZ(i);
+      }
+      return { r: r / c.count, g: gr / c.count, b: b / c.count };
+    };
+    for (const [trunk, crown] of [
+      [cat.canopyTrunk, cat.canopyCrown],
+      [cat.dipterocarpTrunk, cat.dipterocarpCrown],
+      [cat.coconutTrunk, cat.coconutCrown],
+      [cat.highlandTrunk, cat.highlandCrown]
+    ] as const) {
+      const t = avg(trunk);
+      const l = avg(crown);
+      // bark is red-dominant (r >= g); leaves are green-dominant with a clear margin
+      expect(t.r).toBeGreaterThanOrEqual(t.g * 0.98);
+      expect(l.g).toBeGreaterThan(l.r * 1.15);
+      expect(Math.abs(t.g - l.g) + Math.abs(t.r - l.r)).toBeGreaterThan(0.12);
+    }
+  });
+
   it('populates Three.js scene with lush batched InstancedMesh layers', () => {
     const scene = new THREE.Scene();
     const swayGroups = populateNightEcosystem(scene, 1);

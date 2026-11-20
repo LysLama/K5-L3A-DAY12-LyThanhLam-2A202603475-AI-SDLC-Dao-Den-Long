@@ -8,18 +8,36 @@ import {
 } from '../../src/client/terrainBuilder';
 
 describe('sculpted multi-layer island terrain, grounding & safe clearance', () => {
-  it('pins spawn, lanterns, bridge, and Night 3 sanctuaries while forming smooth rolling hills inside clearings', () => {
+  it('pins spawn & Night 3 sanctuaries but lets lanterns follow smooth rolling hills (no flat pits)', () => {
     for (const night of [1, 2, 3] as const) {
       const cfg = getMapConfig(night);
-      expect(Math.abs(sampleIslandElevation(night, 0, night === 1 ? 40 : night === 2 ? 28 : 45, cfg.spawnPos[0], cfg.spawnPos[2]))).toBeLessThanOrEqual(0.02);
+      const rad = night === 1 ? 40 : night === 2 ? 28 : 45;
+      expect(Math.abs(sampleIslandElevation(night, 0, rad, cfg.spawnPos[0], cfg.spawnPos[2]))).toBeLessThanOrEqual(0.02);
 
       for (const l of cfg.lanterns) {
-        if (l.pos[1] === 0 && (night !== 2 || l.pos[0] < 35)) {
-          const rad = night === 1 ? 40 : night === 2 ? 28 : 45;
-          expect(Math.abs(sampleIslandElevation(night, 0, rad, l.pos[0], l.pos[2]))).toBeLessThanOrEqual(0.02);
+        if (l.pos[1] !== 0) continue;
+        const centerX = night === 2 && l.pos[0] >= 35 ? 70 : 0;
+        const rr = night === 2 ? 28 : rad;
+        const h = sampleIslandElevation(night, centerX, rr, l.pos[0], l.pos[2]);
+        // The visual lift at a lantern equals the terrain height beneath it
+        expect(getVisualGroundLift(night, l.pos[0], l.pos[2], 0)).toBeCloseTo(h, 5);
+        // No pit: terrain 3 m around the lantern never differs sharply from the lantern base
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          const hn = sampleIslandElevation(night, centerX, rr, l.pos[0] + Math.cos(a) * 3, l.pos[2] + Math.sin(a) * 3);
+          expect(Math.abs(hn - h)).toBeLessThanOrEqual(0.7);
         }
       }
     }
+    // At least one ground lantern now sits on raised terrain
+    let raised = 0;
+    for (const night of [1, 2, 3] as const) {
+      const cfg = getMapConfig(night);
+      for (const l of cfg.lanterns) {
+        if (l.pos[1] === 0 && getVisualGroundLift(night, l.pos[0], l.pos[2], 0) > 0.05) raised++;
+      }
+    }
+    expect(raised).toBeGreaterThanOrEqual(3);
 
     // Rolling interior meadow hills + outer bluffs reach substantial 3D relief
     let midHillMax = 0;
