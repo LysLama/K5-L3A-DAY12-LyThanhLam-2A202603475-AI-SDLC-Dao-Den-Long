@@ -10,6 +10,8 @@ export class ThirdPersonCamera {
   private lastY = 0;
   private currentPos = new THREE.Vector3(0, 7, -12.5);
   private currentTarget = new THREE.Vector3(0, 1.4, 0);
+  private shakeTime = 0;
+  private shakeIntensity = 0;
 
   private readonly onMouseDown: (e: MouseEvent) => void;
   private readonly onMouseMove: (e: MouseEvent) => void;
@@ -50,8 +52,15 @@ export class ThirdPersonCamera {
     this.yawDeg = 0;
     this.pitchDeg = 24;
     this.distance = 12.5;
+    this.shakeTime = 0;
+    this.shakeIntensity = 0;
     this.currentPos.set(0, 7, -12.5);
     this.currentTarget.set(0, 1.4, 0);
+  }
+
+  triggerShake(intensity: number, duration = 0.25): void {
+    this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
+    this.shakeTime = Math.max(this.shakeTime, duration);
   }
 
   update(camera: THREE.PerspectiveCamera, playerPos: Vec3, pressedKeys: ReadonlySet<string>, dt: number): void {
@@ -84,6 +93,13 @@ export class ThirdPersonCamera {
     this.currentTarget.lerp(desiredTarget, alpha);
 
     camera.position.copy(this.currentPos);
+    if (this.shakeTime > 0) {
+      this.shakeTime = Math.max(0, this.shakeTime - dt);
+      const decay = this.shakeTime * 4 * this.shakeIntensity;
+      camera.position.x += Math.sin(this.shakeTime * 75) * decay;
+      camera.position.y += Math.cos(this.shakeTime * 90) * decay * 0.6;
+      if (this.shakeTime === 0) this.shakeIntensity = 0;
+    }
     camera.lookAt(this.currentTarget);
   }
 

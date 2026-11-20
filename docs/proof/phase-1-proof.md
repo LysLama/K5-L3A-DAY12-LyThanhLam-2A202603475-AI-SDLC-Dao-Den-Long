@@ -16,7 +16,7 @@ Tất cả kiểm chứng dưới đây được chạy trực tiếp sau lần 
 | Kịch bản thua do hết giờ bình minh (`dawn`) | Chạy CLI trên `loss-dawn.scenario.json` | [`docs/proof/phase1-scenarios/out-loss-dawn.jsonl`](phase1-scenarios/out-loss-dawn.jsonl) | **Đạt** (`ticks=12`, `state="lost"`, `reason="dawn"`) |
 | Kịch bản rơi khỏi đảo (`fall_enabled: true`) | Chạy CLI trên `fall-edge.scenario.json` + `fall-edge.inputs.json` | [`docs/proof/phase1-scenarios/out-fall-edge.jsonl`](phase1-scenarios/out-fall-edge.jsonl) | **Đạt** (`tick=44`, `player_hit {by:"fall", flames:2, dropped:2}`) |
 | Tính tất định tuyệt đối theo `--seed` | Chạy `dist-headless/cli.mjs --seed 42 --night 1 --ticks 600` hai lần, so từng byte | `npm run verify` (`scripts/verify-all.mjs`) | **Đạt** (`92,401` bytes trùng khớp 100%) |
-| Build & chơi 3D trên trình duyệt (Mây nón lá, 5 đèn, HUD, không lỗi console) | `npm run build` (`dist/` + `dist-headless/cli.mjs`) + kiểm tra trực tiếp trên trình duyệt | `vite preview` + `browser` subagent (`http://127.0.0.1:4173`) | **Đạt** (WebGL canvas `1015×907`, 0 lỗi console/page, `KeyW`/`Space`/`KeyP` & nút `Chơi lại` hoạt động đầy đủ) |
+| Build & chơi 3D trên trình duyệt (Mây nón lá, 5 đèn, HUD SVG, lối đá & Bloom VFX, không lỗi console) | `npm run build` (`dist/` + `dist-headless/cli.mjs`) + `impeccable detect` + kiểm tra trực tiếp đa kích thước trên trình duyệt | `vite preview` (`1280×800` & `640×900`) + `browser` subagent (`http://127.0.0.1:4173`) | **Đạt** (WebGL `1280×800`, 0 cảnh báo `impeccable detect`, 0 lỗi console/page, lối đá dẫn thẳng `L1`, `KeyW`/`Space`/`KeyH`/`KeyP` & nút `Chơi lại` hoạt động đầy đủ) |
 
 ## 2. Kết quả chạy `npm run build && npm run verify`
 

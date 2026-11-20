@@ -7,37 +7,50 @@
   </head>
   <body>
     <div id="app"></div>
+    <div id="hit-vignette" class="hit-vignette"></div>
 
     <div class="hud">
       <div class="hud-top">
         <div class="hud-group">
-          <div id="hud-flames" class="pill">🔥 3 / 3</div>
-          <div id="hud-carried" class="pill">✦ 0 / 10</div>
-          <div id="hud-lanterns" class="pill">🏮 0 / 5</div>
+          <div id="hud-flames" class="pill hud-flames" title="Ngọn lửa còn lại"></div>
+          <div id="hud-carried" class="pill hud-carried" title="Đom đóm đang mang"></div>
+          <div id="hud-lanterns" class="pill hud-lanterns" title="5 Đèn Lồng Lớn"></div>
         </div>
+
         <div class="hud-group">
-          <div id="hud-timer" class="pill">⏳ 04:00</div>
-          <div id="hud-score" class="pill">Điểm: 0</div>
-          <button id="btn-mute" class="pill" type="button">🔊 Âm: Bật [M]</button>
-          <button id="btn-pause" class="pill" type="button">⏸ Tạm dừng [P]</button>
+          <div id="hud-timer" class="pill hud-timer"></div>
+          <div id="hud-score" class="pill hud-score"></div>
+          <button id="btn-mute" class="pill icon-btn" type="button" title="Bật/Tắt âm thanh [M]"></button>
+          <button id="btn-help" class="pill icon-btn" type="button" title="Hướng dẫn phím [H]"></button>
+          <button id="btn-pause" class="pill icon-btn" type="button" title="Tạm dừng [P]"></button>
         </div>
       </div>
 
+      <div id="hud-toast" class="hud-toast hidden"></div>
+
       <div class="hud-bottom">
         <div id="hud-prompt" class="prompt hidden"></div>
-        <div id="hud-pulse" class="pill pulse-wait">Tỏa Sáng: cần 2 đom đóm</div>
-        <div class="controls-bar">
-          WASD: Di chuyển · Kéo chuột / ← →: Xoay camera · Space: Nhảy · E / F: Thắp Đèn Lồng · Shift / R / Chuột phải: Tỏa Sáng
+        <div id="hud-pulse" class="pill pulse-pill"></div>
+        <div id="controls-bar" class="controls-bar">
+          <span><b>WASD</b> Di chuyển</span>
+          <span><b>Kéo chuột / ← →</b> Camera</span>
+          <span><b>Space</b> Nhảy</span>
+          <span><b>E / F</b> Thắp đèn</span>
+          <span><b>Shift / Chuột phải</b> Tỏa Sáng</span>
         </div>
       </div>
     </div>
 
     <div id="game-overlay" class="overlay hidden">
       <div class="overlay-card">
+        <div id="overlay-emblem" class="overlay-emblem"></div>
         <h1 id="overlay-title">Đảo Đèn Lồng</h1>
         <p id="overlay-sub"></p>
-        <div id="overlay-score" class="overlay-score"></div>
-        <button id="btn-retry" class="btn-primary" type="button">Chơi lại</button>
+        <div id="overlay-stats" class="overlay-stats"></div>
+        <div class="overlay-actions">
+          <button id="btn-resume" class="btn-secondary hidden" type="button">Tiếp tục [P]</button>
+          <button id="btn-retry" class="btn-primary" type="button">Chơi lại</button>
+        </div>
       </div>
     </div>
 
