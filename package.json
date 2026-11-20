@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build:headless": "node scripts/build-headless.mjs",
     "build": "tsc --noEmit && vite build && node scripts/build-headless.mjs",
     "start": "vite preview --host 127.0.0.1 --port 4173 --open",
     "test": "vitest run",
