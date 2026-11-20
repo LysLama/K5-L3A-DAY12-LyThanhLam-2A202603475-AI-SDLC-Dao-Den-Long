@@ -1,4 +1,4 @@
-# Nhật ký Dùng AI & Đánh giá Phase 1–2
+# Nhật ký Dùng AI & Đánh giá Phase 1–3
 
 ## 1. Quy trình làm việc với AI
 
@@ -13,6 +13,12 @@
 3. **Client Phase 2 & UI Polish:** Chuẩn hóa bảng màu [`palette.ts`](../../src/client/palette.ts), dựng 3D Đêm 2 (`Đảo Cau`, cầu tre, bục nhảy, cây cau) & Đêm 3 (`Đảo Chuông`, 3 tầng, 2 dốc, Tháp chuông), chuỗi Menu → Intro (Ông Đăng) → Chiến dịch 3 Đêm → Pause/Settings (`localStorage`) → Dawn Victory, tối ưu HUD (`setHtmlIfChanged`) và chạy `impeccable detect` (0 cảnh báo).
 4. **Verification Gate & Browser Playtest:** Viết 6 kịch bản Phase 2 trong `docs/proof/phase2-scenarios/`, nâng cấp [`verify-all.mjs`](../../scripts/verify-all.mjs) và kiểm tra trình duyệt trực tiếp tại `1280×720`.
 
+### Phase 3 (`phase-3`, Contract `v1.2`)
+1. **Change Request & ADR:** Phân tích TICKET-03 ("Đèn cạn dầu"), lập [`2026-11-20-phase3-design.md`](../superpowers/specs/2026-11-20-phase3-design.md) kèm **ADR-001** (dùng số nguyên `1/60` `fuelTicks: 0..6000`), [`CHANGELOG.md`](../../CHANGELOG.md) và kế hoạch TDD [`2026-11-20-phase3-lantern-fuel.md`](../superpowers/plans/2026-11-20-phase3-lantern-fuel.md).
+2. **TDD nâng cấp Sim & Headless:** Cập nhật `game.contract.json` (`1.2`), `constants.ts`, `types.ts`, `world.ts`, `step.ts`, `validate.ts`; nâng cấp toàn bộ test `all_lit`/điểm cũ sang `dawn_survived` và viết 27 unit/contract test pass không skip.
+3. **Client 3D & Mù màu:** Đèn tắt xẹp `20%` kèm dải rách, thanh dầu 3D nổi, nhấp nháy `1 Hz` khi `fuel < 30`, Bóng Mực `drain` kèm tia hút, HUD động `10..20` đom đóm, nút `"Bảng màu dễ phân biệt"` (`#00B3FF` + `#FFFFFF` + `⚠`) lưu `localStorage`, cùng SFX `refuel`/`lantern_out`/`fuel_drain`.
+4. **Verify Gate & Browser QA:** Tạo 4 kịch bản Phase 3 (`fuel-refuel-relight`, `shade-drain-pulse`, `dawn-survived-threshold`, `capacity-scaling`), chạy 14 kịch bản + benchmark `21,600` ticks và kiểm chứng trực tiếp ở `1280×720`.
+
 ---
 
 ## 2. Các lỗi AI gặp phải & Cách phát hiện / Khắc phục
@@ -26,11 +32,14 @@
 | Phase 2 (FPS / Telemetry) | Phép tính trung bình `mean(1/dt)` kết hợp DOM `innerHTML` mỗi frame làm số đo FPS nhảy bất ổn khi đổi màn (`17 FPS` -> `109 FPS`) | Kiểm chứng `#pause-sub` trên trình duyệt ở Đêm 2 & Đêm 3 | Thêm cache DOM `setHtmlIfChanged` trong `hud.ts` và tính harmonic mean `N / sum(dt)` trên các frame chơi thực tế |
 | Phase 2 (Scenarios) | Scenario Đêm 3 đi đường thẳng nối `(16.6, 9.5) -> (0, 13)` cắt qua khoảng trống `r < 12` làm rơi xuống sân `Y=0` thay vì vào bục nhảy `(0,3,13)` | Đọc snapshot `out-night3-tiers-wind.jsonl` | Điều hướng theo vòng cung `r ~ 20 m` trên Tầng 1 trước khi rẽ vào bục nhảy `(0, 3, 13)` |
 | Phase 2 (Review) | Kẽ hở va chạm vách đá `0.2m` (`5.65` vs landing `5.85`), `prevPause` chưa nhả ở nhánh Resume trên màn hình tần số quét cao & benchmark 21,600 tick thiếu assert đủ số tick | Independent Branch Reviewer (`main..HEAD`) | Chỉnh ngưỡng vách `2.85 / 5.85` trong `maps.ts`, nhả `prevPause` + chặn `e.repeat` ở `main.ts`, đồng bộ cao độ Gió Lạc, dispose GPU buffer và assert `ticks === 21600` |
+| Phase 3 (Sim/Scenarios) | Scenario đặt `fuel=100` giảm xuống `5999` (`99.983`) ở Bước 2 trước Bước 5 tương tác, cộng benchmark `bench` không truyền `time_left_s: 360` nên dừng ở `18,000` ticks (thời lượng Đêm 3 mới `300s`) | Unit test đèn đầy & chạy `verify-all.mjs` bước 6 | Bỏ qua đèn có `fuelTicksToValue(fuelTicks) >= 100` (`used=0`) trong `step.ts`, và truyền `time_left_s: 360` cho stress benchmark `21,600` ticks |
+| Phase 3 (Review) | Tia hút `drain` 3D thiếu mesh nối Bóng–Đèn, dải rách đèn tắt bị chìm trong Octahedron `0.54`, scenario `{ lit: true, fuel: 0 }` không reset `deposited=0`, màu mù màu còn sót ở CSS vignette/hit burst & thiếu `blur` + chuyển `result` khi resume | Independent Branch Reviewer (`main..HEAD`) | Thêm mesh `drainBeam` & hạt `fuel_drain`, đẩy dải rách ra mặt xiên `r=0.41`, reset `deposited=0` khi `fuel<=0` (TDD), đồng bộ `.is-colorblind` CSS/3D, xử lý `blur` & `handleTerminalState()` |
 
 ---
 
 ## 3. Quản lý Token & Ước tính Chi phí
 
 - **Phase 1:** ~65k–85k input tokens, ~18k–24k output tokens (~`\$0.35–\$0.65`).
-- **Phase 2:** ~110k–140k input tokens (bao gồm 3D 3 Đêm, HUD/Menu/Settings, 10 kịch bản headless & kiểm thử trình duyệt lặp lại), ~35k–45k output tokens (~`\$0.65–\$1.00`).
-- **Tối ưu áp dụng:** Cập nhật có mục tiêu theo Code Map (`StartLine`/`EndLine`), tự động chạy `scripts/verify-all.mjs` làm cổng nghiệm thu 1 lệnh duy nhất, dùng `browser` model nhẹ (`flash`) cho kiểm thử trực quan thay vì chạy lại toàn bộ agent nặng.
+- **Phase 2:** ~110k–140k input tokens (3D 3 Đêm, HUD/Menu/Settings, 10 kịch bản headless & kiểm thử trình duyệt), ~35k–45k output tokens (~`\$0.65–\$1.00`).
+- **Phase 3:** ~95k–120k input tokens (Contract `v1.2`, số nguyên `fuelTicks`, AI `drain`, UI/mù màu, 14 kịch bản & browser QA), ~28k–36k output tokens (~`\$0.50–\$0.80`).
+- **Tối ưu áp dụng:** Cập nhật có mục tiêu theo Code Map (`StartLine`/`EndLine`), dùng `scripts/verify-all.mjs` làm cổng nghiệm thu 1 lệnh duy nhất, dùng `browser` model nhẹ (`flash`) cho kiểm thử trực quan.

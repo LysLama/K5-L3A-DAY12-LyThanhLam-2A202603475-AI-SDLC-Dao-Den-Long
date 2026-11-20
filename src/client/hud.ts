@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { DT, TUNING } from '../sim/constants';
+import { DT, FUEL_MAX_TICKS, LOW_FUEL_TICKS, TUNING } from '../sim/constants';
 import { getMapConfig } from '../sim/maps';
 import type { NightId, SimEvent, SimState } from '../sim/types';
-import { distXZ } from '../sim/world';
+import { distXZ, fuelTicksToValue } from '../sim/world';
 import {
   svgClock,
   svgDash,
@@ -20,6 +20,7 @@ import {
 export interface GameSettings {
   volume: number; // 0..100
   sensitivity: number; // 40..200 (100 = 1.0x)
+  colorblind: boolean;
 }
 
 export type UiScreen = 'menu' | 'intro' | 'playing' | 'paused' | 'result';
@@ -28,7 +29,7 @@ interface NightLore {
   kicker: string;
   title: string;
   quote: string;
-  lanternCount: number;
+  lanternNeedLabel: string;
   durationLabel: string;
   featureLabel: string;
 }
@@ -36,30 +37,30 @@ interface NightLore {
 const NIGHT_LORE: Record<NightId, NightLore> = {
   1: {
     kicker: 'Đêm Thứ Nhất',
-    title: 'Đảo Bến — Ngọn Lửa Khởi Hành',
+    title: 'Đảo Bến — Giữ Lửa Tới Bình Minh',
     quote:
-      '“Sương đen vừa nuốt chửng bến thuyền đầu làng. Mây à, hãy gom đom đóm và thắp lại 5 ngọn Đèn Lồng trước khi bóng tối siết chặt.” — Ông Đăng',
-    lanternCount: 5,
-    durationLabel: '05:00',
-    featureLabel: '5 Đèn Lồng · Bóng Mực'
+      '“Sương đen vừa nuốt chửng bến thuyền, mà dầu đèn lại cạn từng giây. Mây à, hãy thắp và châm dầu để giữ ít nhất 3/5 Đèn Lồng sáng đến bình minh!” — Ông Đăng',
+    lanternNeedLabel: '≥ 3/5 Đèn',
+    durationLabel: '04:00',
+    featureLabel: 'Dầu 100 · Sức chứa 10→20'
   },
   2: {
     kicker: 'Đêm Thứ Hai',
     title: 'Đảo Cau — Cây Cầu Trong Sương',
     quote:
-      '“Cây cầu tre qua Đảo Cau vẫn đứng vững, nhưng Gió Lạc tinh quái đã thức giấc. Coi chừng chúng cướp mất ánh sáng trên đường sang đảo!” — Ông Đăng',
-    lanternCount: 6,
-    durationLabel: '05:30',
-    featureLabel: '2 Đảo · Cầu Tre · Gió Lạc'
+      '“Đèn yếu dưới 30% sẽ mất vùng an toàn và thu hút Bóng Mực tới hút dầu. Hãy giữ vững ít nhất 4/6 Đèn Lồng trên cả hai đảo trước Gió Lạc!” — Ông Đăng',
+    lanternNeedLabel: '≥ 4/6 Đèn',
+    durationLabel: '04:30',
+    featureLabel: '2 Đảo · Cầu Tre · Bùa Gió'
   },
   3: {
     kicker: 'Đêm Thứ Ba',
     title: 'Đảo Chuông — Bình Minh Sau Cơn Gió',
     quote:
-      '“Tháp Chuông cổ trên đỉnh Đảo Chuông là hy vọng cuối cùng. Gió lớn sẽ quật từng cơn mỗi 30 giây — vững bước để thắp sáng cả 7 ngọn đèn!” — Ông Đăng',
-    lanternCount: 7,
-    durationLabel: '06:00',
-    featureLabel: '3 Tầng · Tháp Chuông · Gió Mạnh'
+      '“Đêm cuối dài 5 phút với gió mạnh từng cơn và Bóng Mực hung hãn. Giữ tối thiểu 5/7 Đèn Lồng bừng sáng đến bình minh để cứu quần đảo!” — Ông Đăng',
+    lanternNeedLabel: '≥ 5/7 Đèn',
+    durationLabel: '05:00',
+    featureLabel: '3 Tầng · Tháp Chuông · Gió'
   }
 };
 
@@ -80,6 +81,7 @@ export class HudController {
   private readonly flamesEl = document.getElementById('hud-flames')!;
   private readonly nightBadgeEl = document.getElementById('hud-night-badge')!;
   private readonly charmBadgeEl = document.getElementById('hud-charm-badge')!;
+  private readonly lowFuelBadgeEl = document.getElementById('hud-lowfuel-badge')!;
   private readonly windBadgeEl = document.getElementById('hud-wind-badge')!;
   private readonly carriedEl = document.getElementById('hud-carried')!;
   private readonly lanternsEl = document.getElementById('hud-lanterns')!;
@@ -116,6 +118,8 @@ export class HudController {
   private readonly volumeVal = document.getElementById('val-volume')!;
   private readonly sensitivityInput = document.getElementById('input-sensitivity') as HTMLInputElement;
   private readonly sensitivityVal = document.getElementById('val-sensitivity')!;
+  private readonly colorblindInput = document.getElementById('input-colorblind') as HTMLInputElement;
+  private readonly colorblindVal = document.getElementById('val-colorblind')!;
 
   private readonly resultEmblemEl = document.getElementById('result-emblem')!;
   private readonly resultTitleEl = document.getElementById('result-title')!;
@@ -130,6 +134,7 @@ export class HudController {
   private controlsVisible = true;
   private settingsOpen = false;
   private settingsFromMenu = false;
+  private colorblindMode = false;
   private readonly projVec = new THREE.Vector3();
   private readonly lastHtmlCache = new Map<HTMLElement, string>();
 
@@ -193,18 +198,20 @@ export class HudController {
       this.toggleHelp();
     });
 
-    // Settings sliders
+    // Settings inputs
     this.applySettingsToInputs(initialSettings);
     const emitSettings = () => {
       const next: GameSettings = {
         volume: Number(this.volumeInput.value),
-        sensitivity: Number(this.sensitivityInput.value)
+        sensitivity: Number(this.sensitivityInput.value),
+        colorblind: this.colorblindInput.checked
       };
       this.applySettingsToInputs(next);
       cb.onChangeSettings(next);
     };
     this.volumeInput.addEventListener('input', emitSettings);
     this.sensitivityInput.addEventListener('input', emitSettings);
+    this.colorblindInput.addEventListener('change', emitSettings);
   }
 
   private applySettingsToInputs(s: GameSettings): void {
@@ -212,6 +219,10 @@ export class HudController {
     this.volumeVal.textContent = `${s.volume}%`;
     this.sensitivityInput.value = String(s.sensitivity);
     this.sensitivityVal.textContent = `${(s.sensitivity / 100).toFixed(1)}×`;
+    this.colorblindInput.checked = s.colorblind;
+    this.colorblindVal.textContent = s.colorblind ? 'Bật' : 'Tắt';
+    this.colorblindMode = s.colorblind;
+    document.body.classList.toggle('is-colorblind', s.colorblind);
   }
 
   private openMenuSettings(): void {
@@ -260,9 +271,9 @@ export class HudController {
       document.getElementById('intro-title')!.textContent = lore.title;
       document.getElementById('intro-quote')!.textContent = lore.quote;
       document.getElementById('intro-meta')!.innerHTML = `
-        <div class="stat-box"><div class="stat-label">Mục tiêu</div><div class="stat-val">${lore.lanternCount} Đèn</div></div>
+        <div class="stat-box"><div class="stat-label">Ngưỡng thắng</div><div class="stat-val">${lore.lanternNeedLabel}</div></div>
         <div class="stat-box"><div class="stat-label">Thời gian</div><div class="stat-val">${lore.durationLabel}</div></div>
-        <div class="stat-box"><div class="stat-label">Địa hình</div><div class="stat-val" style="font-size:12.5px">${lore.featureLabel}</div></div>
+        <div class="stat-box"><div class="stat-label">Luật Phase 3</div><div class="stat-val" style="font-size:12.5px">${lore.featureLabel}</div></div>
       `;
     } else if (screen === 'paused') {
       this.settingsFromMenu = false;
@@ -289,7 +300,15 @@ export class HudController {
     for (const ev of events) {
       if (ev.name === 'lantern_lit') {
         const litCount = state.lanterns.filter((l) => l.lit).length;
-        this.showToast(`Đèn Lồng ${ev.data.lantern_id} đã bừng sáng! (${litCount}/${total})`);
+        const relabel = ev.data.relight ? 'đã được thắp lại' : 'đã bừng sáng';
+        this.showToast(
+          `Đèn ${ev.data.lantern_id} ${relabel}! (${litCount}/${total} · Sức chứa ${state.player.capacity})`
+        );
+      } else if (ev.name === 'refuel') {
+        this.showToast(`Đã châm dầu Đèn ${ev.data.lantern_id} (${ev.data.fuel}%)`);
+      } else if (ev.name === 'lantern_out') {
+        const warn = this.colorblindMode ? '⚠ ' : '';
+        this.showToast(`${warn}Đèn ${ev.data.lantern_id} đã cạn dầu và tắt!`);
       } else if (ev.name === 'charm_picked') {
         this.showToast('Nhặt Bùa Gió! Tốc độ 7.2 m/s & Lướt không hồi chiêu (10s)');
       } else if (ev.name === 'drifter_steal') {
@@ -303,46 +322,41 @@ export class HudController {
     }
   }
 
-  renderResult(
-    state: SimState,
-    campaignMode: boolean,
-    campaignTotalScore: number
-  ): void {
+  renderResult(state: SimState, campaignMode: boolean, campaignTotalScore: number): void {
     this.showScreen('result', state.night);
     const mapCfg = getMapConfig(state.night);
     const totalLanterns = state.lanterns.length;
     const litCount = state.lanterns.filter((l) => l.lit).length;
-    const secs = Math.max(0, Math.ceil(state.timeLeftS));
-    const mm = String(Math.floor(secs / 60)).padStart(2, '0');
-    const ss = String(secs % 60).padStart(2, '0');
+    const needed = Math.ceil(TUNING.win_ratio * totalLanterns);
 
     const isDawnVictory = state.status === 'won' && state.night === 3;
     this.screenResult.classList.toggle('is-dawn', isDawnVictory);
     this.resultEmblemEl.innerHTML =
       state.status === 'won' ? svgLantern(true) : svgFlame(state.player.flames > 0);
 
+    const warnPrefix = this.colorblindMode ? '⚠ ' : '';
     if (isDawnVictory) {
       this.resultTitleEl.textContent = 'Bình Minh Đã Ló Dạng!';
       this.resultSubEl.textContent = campaignMode
-        ? 'Mây đã chinh phục cả Ba Hòn Đảo, xua tan sương đen và mang bình minh trở lại!'
-        : 'Đảo Chuông và Tháp Chuông cổ đã bừng sáng rực rỡ đón bình minh!';
+        ? `Mây đã giữ sáng ${litCount}/${totalLanterns} Đèn Lồng qua Ba Đêm và mang bình minh trở lại!`
+        : `Đảo Chuông giữ vững ${litCount}/${totalLanterns} Đèn Lồng đến bình minh!`;
     } else if (state.status === 'won') {
-      this.resultTitleEl.textContent = `${mapCfg.name} Đã Bừng Sáng!`;
-      this.resultSubEl.textContent = `Mây đã thắp sáng đủ ${totalLanterns} Đèn Lồng Lớn trong Đêm ${state.night}.`;
+      this.resultTitleEl.textContent = `Sống Sót Qua Đêm ${state.night} — ${mapCfg.name}!`;
+      this.resultSubEl.textContent = `Mây đã giữ sáng ${litCount}/${totalLanterns} Đèn Lồng (đạt ngưỡng ≥ ${needed}) tới bình minh.`;
     } else if (state.player.flames <= 0) {
-      this.resultTitleEl.textContent = 'Ngọn Lửa Đã Tắt...';
+      this.resultTitleEl.textContent = `${warnPrefix}Ngọn Lửa Đã Tắt...`;
       this.resultSubEl.textContent = 'Bóng Mực hoặc vực sâu đã làm Mây mất hết Ngọn Lửa.';
     } else {
-      this.resultTitleEl.textContent = 'Bình Minh Đã Đến';
-      this.resultSubEl.textContent = `Hết thời gian của Đêm ${state.night} trước khi thắp đủ ${totalLanterns} Đèn Lồng.`;
+      this.resultTitleEl.textContent = `${warnPrefix}Bình Minh Chưa Đủ Sáng`;
+      this.resultSubEl.textContent = `Hết giờ Đêm ${state.night}: chỉ còn ${litCount}/${totalLanterns} Đèn sáng (cần ≥ ${needed}).`;
     }
 
     const scoreTitle = campaignMode ? 'Điểm Chiến dịch' : 'Điểm Đêm';
     const scoreValue = campaignMode ? campaignTotalScore : state.score;
 
     this.resultStatsEl.innerHTML = `
-      <div class="stat-box"><div class="stat-label">Đèn Lồng</div><div class="stat-val">${litCount}/${totalLanterns}</div></div>
-      <div class="stat-box"><div class="stat-label">Thời gian dư</div><div class="stat-val">${mm}:${ss}</div></div>
+      <div class="stat-box"><div class="stat-label">Đèn sáng</div><div class="stat-val">${litCount}/${totalLanterns}</div></div>
+      <div class="stat-box"><div class="stat-label">Ngọn lửa</div><div class="stat-val">${state.player.flames}/${TUNING.flames}</div></div>
       <div class="stat-box"><div class="stat-label">${scoreTitle}</div><div class="stat-val">${scoreValue}</div></div>
     `;
 
@@ -373,11 +387,15 @@ export class HudController {
 
     const mapCfg = getMapConfig(state.night);
     this.nightBadgeEl.textContent = `Đêm ${state.night} · ${mapCfg.name}`;
+    const warnGlyph = this.colorblindMode ? '⚠ ' : '';
 
     // Flames
     let flamesHtml = '';
     for (let i = 0; i < TUNING.flames; i++) {
       flamesHtml += svgFlame(i < state.player.flames);
+    }
+    if (this.colorblindMode && state.player.flames <= 1) {
+      flamesHtml = `<span>⚠</span>${flamesHtml}`;
     }
     this.setHtmlIfChanged(this.flamesEl, flamesHtml);
 
@@ -390,6 +408,18 @@ export class HudController {
       this.charmBadgeEl.classList.add('hidden');
     }
 
+    // Low-fuel blinking warning pill (1 Hz)
+    const weakLanterns = state.lanterns.filter((l) => l.lit && l.fuelTicks < LOW_FUEL_TICKS);
+    if (weakLanterns.length > 0) {
+      this.lowFuelBadgeEl.classList.remove('hidden');
+      this.setHtmlIfChanged(
+        this.lowFuelBadgeEl,
+        `<span>⚠ Dầu yếu: ${weakLanterns.map((l) => l.id).join(', ')}</span>`
+      );
+    } else {
+      this.lowFuelBadgeEl.classList.add('hidden');
+    }
+
     // Wind Gust warning / active badge (Night 3)
     if (state.wind.enabled && (state.wind.warning || state.wind.active)) {
       this.windBadgeEl.classList.remove('hidden');
@@ -397,37 +427,43 @@ export class HudController {
       this.setHtmlIfChanged(
         this.windBadgeEl,
         state.wind.active
-          ? `${svgWind()}<span>GIÓ MẠNH đang thổi!</span>`
-          : `${svgWind()}<span>Cảnh báo: Gió lớn sắp nổi!</span>`
+          ? `${svgWind()}<span>${warnGlyph}GIÓ MẠNH đang thổi!</span>`
+          : `${svgWind()}<span>⚠ Gió lớn sắp nổi!</span>`
       );
     } else {
       this.windBadgeEl.classList.add('hidden');
     }
 
-    // 10-slot Firefly bar
+    // Dynamic capacity Firefly bar (10..20 slots)
+    const cap = state.player.capacity;
     let slotsHtml = `${svgMote()}<span class="mote-slots">`;
-    for (let i = 0; i < TUNING.carry_capacity; i++) {
+    for (let i = 0; i < cap; i++) {
       slotsHtml += `<span class="slot-pip ${i < state.player.carried ? 'is-filled' : ''}"></span>`;
     }
-    slotsHtml += `</span><span>${state.player.carried}/${TUNING.carry_capacity}</span>`;
+    slotsHtml += `</span><span>${state.player.carried}/${cap}</span>`;
     this.setHtmlIfChanged(this.carriedEl, slotsHtml);
 
-    // Lanterns
+    // Lanterns + survival threshold
     let litCount = 0;
     let lanternsHtml = '';
     for (const l of state.lanterns) {
       if (l.lit) litCount += 1;
       lanternsHtml += svgLantern(l.lit);
     }
-    lanternsHtml += `<span class="hud-lantern-count">${litCount}/${state.lanterns.length}</span>`;
+    const needed = Math.ceil(TUNING.win_ratio * state.lanterns.length);
+    lanternsHtml += `<span class="hud-lantern-count">${litCount}/${state.lanterns.length} (≥${needed})</span>`;
     this.setHtmlIfChanged(this.lanternsEl, lanternsHtml);
 
-    // Timer & Score (blinking red #FF5A5F when <= 30s)
+    // Timer & Score (blinking red #FF5A5F / #FFFFFF + ⚠ when <= 30s)
     const secs = Math.max(0, Math.ceil(state.timeLeftS));
     const mm = String(Math.floor(secs / 60)).padStart(2, '0');
     const ss = String(secs % 60).padStart(2, '0');
-    this.setHtmlIfChanged(this.timerEl, `${svgClock()}<span>${mm}:${ss}</span>`);
-    this.timerEl.classList.toggle('is-urgent', secs <= 30 && state.status === 'playing');
+    const isUrgent = secs <= 30 && state.status === 'playing';
+    this.setHtmlIfChanged(
+      this.timerEl,
+      `${svgClock()}<span>${isUrgent ? warnGlyph : ''}${mm}:${ss}</span>`
+    );
+    this.timerEl.classList.toggle('is-urgent', isUrgent);
     this.setHtmlIfChanged(
       this.scoreEl,
       `<span>Điểm</span><span class="hud-score-val">${state.score}</span>`
@@ -467,21 +503,37 @@ export class HudController {
       this.setHtmlIfChanged(this.pulseEl, `${svgPulse()}<span>Tỏa Sáng [Q / RMB]</span>`);
     }
 
-    // Contextual interact prompt: "E — Nạp ánh sáng (x/10)"
-    const nearUnlit = state.lanterns.find(
-      (l) => !l.lit && distXZ(state.player.pos, l.pos) <= TUNING.interact_radius
-    );
-    if (nearUnlit && state.status === 'playing') {
+    // Contextual interact prompt (nearest receivable unlit or non-full lit lantern)
+    let bestReceivable: (typeof state.lanterns)[number] | null = null;
+    let bestDist = Infinity;
+    for (const l of state.lanterns) {
+      if (l.lit && fuelTicksToValue(l.fuelTicks) >= TUNING.fuel_max) continue;
+      const d = distXZ(state.player.pos, l.pos);
+      if (d <= TUNING.interact_radius && Math.abs(state.player.pos[1] - l.pos[1]) <= 2.5 && d < bestDist) {
+        bestDist = d;
+        bestReceivable = l;
+      }
+    }
+    if (bestReceivable && state.status === 'playing') {
       this.promptEl.classList.remove('hidden');
-      this.promptEl.textContent =
-        state.player.carried > 0
-          ? `E — Nạp ánh sáng (${nearUnlit.deposited}/${TUNING.lantern_cost}) · ${nearUnlit.id}`
-          : `${nearUnlit.id} (${nearUnlit.deposited}/${TUNING.lantern_cost}) — Hãy thu thập thêm đom đóm`;
+      if (!bestReceivable.lit) {
+        const req = bestReceivable.everLit ? TUNING.relight_cost : TUNING.lantern_cost;
+        const actionLabel = bestReceivable.everLit ? 'Thắp lại' : 'Nạp ánh sáng';
+        this.promptEl.textContent =
+          state.player.carried > 0
+            ? `E — ${actionLabel} (${bestReceivable.deposited}/${req}) · ${bestReceivable.id}`
+            : `${bestReceivable.id} (${bestReceivable.deposited}/${req}) — Thu thập thêm đom đóm`;
+      } else {
+        const pct = Math.min(99, Math.round((bestReceivable.fuelTicks / FUEL_MAX_TICKS) * 100));
+        this.promptEl.textContent =
+          state.player.carried > 0
+            ? `E — Châm dầu ${bestReceivable.id} (${pct}%)`
+            : `${bestReceivable.id} (Dầu ${pct}%) — Thu thập thêm đom đóm để châm dầu`;
+      }
     } else {
       this.promptEl.classList.add('hidden');
     }
 
-    // Off-screen nearest unlit lantern directional arrow
     this.updateOffscreenLanternArrow(state, camera);
   }
 
@@ -493,8 +545,12 @@ export class HudController {
 
     let nearest: (typeof state.lanterns)[number] | null = null;
     let bestDist = Infinity;
-    for (const l of state.lanterns) {
-      if (l.lit) continue;
+    // Prefer unlit lanterns; if all lit, point toward nearest low-fuel (< 30) lantern
+    const candidates = state.lanterns.some((l) => !l.lit)
+      ? state.lanterns.filter((l) => !l.lit)
+      : state.lanterns.filter((l) => l.lit && l.fuelTicks < LOW_FUEL_TICKS);
+
+    for (const l of candidates) {
       const d = Math.hypot(
         l.pos[0] - state.player.pos[0],
         l.pos[1] - state.player.pos[1],

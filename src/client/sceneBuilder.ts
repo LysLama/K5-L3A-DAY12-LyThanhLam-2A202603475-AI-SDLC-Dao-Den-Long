@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TUNING } from '../sim/constants';
+import { FUEL_MAX_TICKS, LOW_FUEL_TICKS, TUNING } from '../sim/constants';
 import { getMapConfig } from '../sim/maps';
 import type { NightId, SimEvent, SimState, Vec3 } from '../sim/types';
 import { computeAmbientIntensity, PALETTE } from './palette';
@@ -9,6 +9,11 @@ import { createBambooBridgeTexture, createGlowTexture, createIslandGroundTexture
 
 interface LanternVisual {
   group: THREE.Group;
+  paperHeadGroup: THREE.Group;
+  tearGroup: THREE.Group;
+  fuelBarGroup: THREE.Group;
+  fuelFillMesh: THREE.Mesh;
+  fuelFillMat: THREE.MeshBasicMaterial;
   coreMat: THREE.MeshStandardMaterial;
   flameMesh: THREE.Mesh;
   flameHalo: THREE.Sprite;
@@ -26,6 +31,8 @@ interface ShadeVisual {
   eyeMat: THREE.MeshBasicMaterial;
   wisps: THREE.Mesh[];
   stunStarsGroup: THREE.Group;
+  drainBeam: THREE.Mesh;
+  drainBeamMat: THREE.MeshBasicMaterial;
 }
 
 interface DrifterVisual {
@@ -55,6 +62,8 @@ export interface RenderSyncOptions {
   frameDt: number;
   elapsedSec: number;
   isMovingInput: boolean;
+  colorblind?: boolean;
+  cameraPos?: Vec3;
   prevPlayerPos: Vec3;
   prevShadePositions: ReadonlyMap<string, Vec3>;
   prevDrifterPositions: ReadonlyMap<string, Vec3>;
@@ -847,20 +856,61 @@ export class IslandScene {
       emissiveIntensity: 0.4,
       roughness: 0.3
     });
+
+    // Upper paper cage + eaves pivoted at collar (y = 2.84) so unlit squashes cleanly by 20%
+    const paperHeadGroup = new THREE.Group();
+    paperHeadGroup.position.y = 2.84;
+
     const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.54, 0), coreMat);
-    core.position.y = 3.25;
-    group.add(core);
+    core.position.y = 0.41;
+    paperHeadGroup.add(core);
+
+    // Visible torn-paper slashes proud of all 4 octahedron faces when unlit
+    const tearGroup = new THREE.Group();
+    tearGroup.position.y = 0.41;
+    const tearMat = new THREE.MeshBasicMaterial({ color: '#0f1320' });
+    const slashGeo = new THREE.BoxGeometry(0.56, 0.075, 0.06);
+    for (let i = 0; i < 4; i++) {
+      const a = ((i + 0.5) / 4) * Math.PI * 2;
+      const slashA = new THREE.Mesh(slashGeo, tearMat);
+      slashA.position.set(Math.cos(a) * 0.41, 0.06, Math.sin(a) * 0.41);
+      slashA.rotation.y = -a + Math.PI / 2;
+      slashA.rotation.z = 0.44;
+      const slashB = new THREE.Mesh(slashGeo, tearMat);
+      slashB.position.set(Math.cos(a) * 0.41, -0.09, Math.sin(a) * 0.41);
+      slashB.rotation.y = -a + Math.PI / 2;
+      slashB.rotation.z = -0.38;
+      tearGroup.add(slashA, slashB);
+    }
+    paperHeadGroup.add(tearGroup);
 
     const roof1 = new THREE.Mesh(new THREE.ConeGeometry(1.12, 0.45, 8), woodMat);
-    roof1.position.y = 3.82;
+    roof1.position.y = 0.98;
     const roof2 = new THREE.Mesh(new THREE.ConeGeometry(0.75, 0.42, 8), stoneMat);
-    roof2.position.y = 4.16;
+    roof2.position.y = 1.32;
     const spire = new THREE.Mesh(
       new THREE.ConeGeometry(0.1, 0.45, 6),
       new THREE.MeshStandardMaterial({ color: PALETTE.goldUi, emissive: '#593b00', roughness: 0.4 })
     );
-    spire.position.y = 4.55;
-    group.add(roof1, roof2, spire);
+    spire.position.y = 1.71;
+    paperHeadGroup.add(roof1, roof2, spire);
+    group.add(paperHeadGroup);
+
+    // Floating 3D Fuel Gauge above spire when lantern is lit
+    const fuelBarGroup = new THREE.Group();
+    fuelBarGroup.position.y = 5.05;
+    fuelBarGroup.visible = false;
+    const fuelBg = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.56, 0.22),
+      new THREE.MeshBasicMaterial({ color: '#0e1430', side: THREE.DoubleSide })
+    );
+    const fuelFillMat = new THREE.MeshBasicMaterial({ color: PALETTE.goldUi, side: THREE.DoubleSide });
+    const fuelFillMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.44, 0.13), fuelFillMat);
+    fuelFillMesh.position.z = 0.015;
+    const fuelFillBack = new THREE.Mesh(new THREE.PlaneGeometry(1.44, 0.13), fuelFillMat);
+    fuelFillBack.position.z = -0.015;
+    fuelBarGroup.add(fuelBg, fuelFillMesh, fuelFillBack);
+    group.add(fuelBarGroup);
 
     const flameMesh = new THREE.Mesh(
       new THREE.SphereGeometry(0.35, 12, 10),
@@ -944,6 +994,11 @@ export class IslandScene {
 
     this.lanternVisuals.set(id, {
       group,
+      paperHeadGroup,
+      tearGroup,
+      fuelBarGroup,
+      fuelFillMesh,
+      fuelFillMat,
       coreMat,
       flameMesh,
       flameHalo,
@@ -1134,7 +1189,26 @@ export class IslandScene {
     stunStarsGroup.visible = false;
     group.add(stunStarsGroup);
 
-    const visual: ShadeVisual = { group, bodyMat, eyeMat, wisps, stunStarsGroup };
+    const beamGeo = new THREE.CylinderGeometry(0.055, 0.13, 1, 8);
+    beamGeo.rotateX(Math.PI / 2);
+    const drainBeamMat = new THREE.MeshBasicMaterial({
+      color: PALETTE.shadeEye,
+      transparent: true,
+      opacity: 0.72
+    });
+    const drainBeam = new THREE.Mesh(beamGeo, drainBeamMat);
+    drainBeam.visible = false;
+    this.scene.add(drainBeam);
+
+    const visual: ShadeVisual = {
+      group,
+      bodyMat,
+      eyeMat,
+      wisps,
+      stunStarsGroup,
+      drainBeam,
+      drainBeamMat
+    };
     this.shadeVisuals.set(id, visual);
     this.scene.add(group);
     return visual;
@@ -1196,6 +1270,8 @@ export class IslandScene {
       frameDt,
       elapsedSec,
       isMovingInput,
+      colorblind = false,
+      cameraPos,
       prevPlayerPos,
       prevShadePositions,
       prevDrifterPositions
@@ -1255,7 +1331,11 @@ export class IslandScene {
     this.mayLanternPivot.rotation.x = -0.14 * this.moveBlend + Math.cos(elapsedSec * 3.1) * 0.04;
     this.mayLanternLight.intensity = 3.0 + Math.sin(elapsedSec * 8) * 0.25;
     this.mayBodyMat.emissive.setHex(
-      p.invulnTicks > 0 && Math.floor(elapsedSec * 14) % 2 === 0 ? PALETTE.danger : 0x000000
+      p.invulnTicks > 0 && Math.floor(elapsedSec * 14) % 2 === 0
+        ? colorblind
+          ? PALETTE.dangerCb
+          : PALETTE.danger
+        : 0x000000
     );
 
     if (p.charmTicks > 0) {
@@ -1267,13 +1347,15 @@ export class IslandScene {
     }
 
     // 2. Update Lanterns & Official Ambient Intensity 0.15 + 0.55 * (lit / total)
+    const blink1HzOn = Math.sin(elapsedSec * Math.PI * 2) >= 0;
     let litCount = 0;
     for (const l of state.lanterns) {
       if (l.lit) litCount += 1;
       const vis = this.lanternVisuals.get(l.id);
       if (!vis) continue;
       vis.group.position.set(l.pos[0], l.pos[1], l.pos[2]);
-      const ratio = Math.min(1, l.deposited / TUNING.lantern_cost);
+      const req = l.everLit ? TUNING.relight_cost : TUNING.lantern_cost;
+      const ratio = Math.min(1, l.deposited / Math.max(1, req));
 
       vis.orbitMotes.forEach((m, idx) => {
         m.visible = !l.lit && idx < l.deposited;
@@ -1288,20 +1370,58 @@ export class IslandScene {
       });
 
       if (l.lit) {
+        const fuelRatio = Math.max(0, Math.min(1, l.fuelTicks / FUEL_MAX_TICKS));
+        const isLowFuel = l.fuelTicks < LOW_FUEL_TICKS;
+        const pulseMult = isLowFuel ? (blink1HzOn ? 1.0 : 0.25) : 1.0;
+
+        vis.paperHeadGroup.scale.set(1, 1, 1);
+        vis.tearGroup.visible = false;
+
+        vis.fuelBarGroup.visible = !isLowFuel || blink1HzOn;
+        if (cameraPos) {
+          vis.fuelBarGroup.rotation.y = Math.atan2(
+            cameraPos[0] - l.pos[0],
+            cameraPos[2] - l.pos[2]
+          );
+        }
+        const barFillColor = isLowFuel
+          ? colorblind
+            ? PALETTE.dangerCb
+            : PALETTE.danger
+          : PALETTE.goldUi;
+        vis.fuelFillMat.color.setHex(barFillColor);
+        vis.fuelFillMesh.scale.x = Math.max(0.02, fuelRatio);
+        vis.fuelFillMesh.position.x = -0.72 * (1 - Math.max(0.02, fuelRatio));
+        const backBar = vis.fuelBarGroup.children[2] as THREE.Mesh;
+        backBar.scale.x = vis.fuelFillMesh.scale.x;
+        backBar.position.x = vis.fuelFillMesh.position.x;
+
         vis.coreMat.color.setHex(PALETTE.lanternCore);
         vis.coreMat.emissive.setHex(PALETTE.lanternWarm);
-        vis.coreMat.emissiveIntensity = 1.6;
-        vis.flameMesh.visible = true;
+        vis.coreMat.emissiveIntensity = 1.6 * pulseMult;
+        vis.flameMesh.visible = !isLowFuel || blink1HzOn;
         vis.flameMesh.scale.setScalar(0.95 + Math.sin(elapsedSec * 8) * 0.1);
-        vis.flameHalo.material.opacity = 0.72 + Math.sin(elapsedSec * 6) * 0.1;
-        vis.light.intensity = 7.2 + Math.sin(elapsedSec * 6) * 0.45;
-        vis.safeRingMat.opacity = 0.45 + Math.sin(elapsedSec * 3) * 0.1;
-        vis.innerRingMat.opacity = 0.28;
-        vis.innerRingMesh.rotation.z = elapsedSec * 0.35;
+        vis.flameHalo.material.opacity = (0.72 + Math.sin(elapsedSec * 6) * 0.1) * pulseMult;
+        vis.light.intensity = (7.2 + Math.sin(elapsedSec * 6) * 0.45) * pulseMult;
+
+        // Safe zone ring is active ONLY when fuel >= 30
+        if (isLowFuel) {
+          vis.safeRingMat.opacity = 0;
+          vis.innerRingMat.opacity = 0;
+        } else {
+          vis.safeRingMat.opacity = 0.45 + Math.sin(elapsedSec * 3) * 0.1;
+          vis.innerRingMat.opacity = 0.28;
+          vis.innerRingMesh.rotation.z = elapsedSec * 0.35;
+        }
         vis.crystalMeshes.forEach((c) => {
-          (c.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.0;
+          (c.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.0 * pulseMult;
         });
       } else {
+        // Distinguish unlit lanterns without color: squashed 20% + torn paper slashes
+        vis.paperHeadGroup.scale.set(1.06, 0.8, 1.06);
+        vis.tearGroup.visible = true;
+        vis.fuelBarGroup.visible = false;
+
         vis.coreMat.color.setHex(PALETTE.lanternUnlit);
         vis.coreMat.emissive.setHex(ratio > 0 ? PALETTE.lanternWarm : 0x2f3340);
         vis.coreMat.emissiveIntensity = 0.35 + ratio * 0.85;
@@ -1372,18 +1492,53 @@ export class IslandScene {
       const spawnScale =
         s.state === 'spawning' ? Math.max(0.25, 1 - s.stateTicksLeft / 30) : 1.0;
       vis.group.scale.setScalar(spawnScale);
-      const hover = s.state === 'stunned' ? -0.08 : Math.sin(elapsedSec * 4.5 + s.pos[0]) * 0.14;
+      const hover =
+        s.state === 'stunned'
+          ? -0.08
+          : s.state === 'drain'
+            ? 0.25 + Math.sin(elapsedSec * 9) * 0.12
+            : Math.sin(elapsedSec * 4.5 + s.pos[0]) * 0.14;
       vis.group.position.set(renderShadePos[0], renderShadePos[1] + 0.9 + hover, renderShadePos[2]);
+
+      const drainTarget =
+        s.state === 'drain' && s.targetLanternId
+          ? state.lanterns.find((l) => l.id === s.targetLanternId)
+          : undefined;
+      const lookTarget = drainTarget ? drainTarget.pos : renderPlayerPos;
       vis.group.rotation.y = Math.atan2(
-        renderPlayerPos[0] - renderShadePos[0],
-        renderPlayerPos[2] - renderShadePos[2]
+        lookTarget[0] - renderShadePos[0],
+        lookTarget[2] - renderShadePos[2]
       );
+      vis.group.rotation.x = s.state === 'drain' ? 0.28 : 0;
 
       vis.wisps.forEach((w, idx) => {
         const a = elapsedSec * (s.state === 'stunned' ? 0.8 : 3.0) + (idx / 3) * Math.PI * 2;
         const r = s.state === 'stunned' ? 0.3 : 0.42;
         w.position.set(Math.cos(a) * r, -0.52 + Math.sin(elapsedSec * 4 + idx) * 0.1, Math.sin(a) * r);
       });
+
+      const activeEyeHex = colorblind ? PALETTE.shadeEyeCb : PALETTE.shadeEye;
+      const activeEmissiveHex = colorblind ? '#004870' : '#2b0d4d';
+      if (s.state === 'drain' && drainTarget) {
+        const sx = renderShadePos[0];
+        const sy = renderShadePos[1] + 0.95 + hover;
+        const sz = renderShadePos[2];
+        const tx = drainTarget.pos[0];
+        const ty = drainTarget.pos[1] + 3.25;
+        const tz = drainTarget.pos[2];
+        const dist = Math.hypot(tx - sx, ty - sy, tz - sz);
+        vis.drainBeam.visible = dist > 0.05;
+        if (vis.drainBeam.visible) {
+          vis.drainBeam.position.set((sx + tx) * 0.5, (sy + ty) * 0.5, (sz + tz) * 0.5);
+          vis.drainBeam.lookAt(tx, ty, tz);
+          const pulse = 1 + Math.sin(elapsedSec * 14) * 0.22;
+          vis.drainBeam.scale.set(pulse, pulse, dist);
+          vis.drainBeamMat.color.setHex(activeEyeHex);
+          vis.drainBeamMat.opacity = 0.48 + 0.28 * Math.sin(elapsedSec * 12);
+        }
+      } else {
+        vis.drainBeam.visible = false;
+      }
 
       if (s.state === 'stunned') {
         vis.bodyMat.color.setHex(PALETTE.shadeStun);
@@ -1393,19 +1548,22 @@ export class IslandScene {
         vis.stunStarsGroup.rotation.y = elapsedSec * 5;
       } else if (s.state === 'recoil') {
         vis.bodyMat.color.setHex(PALETTE.shadeBody);
-        vis.bodyMat.emissive.set('#4c1d7a');
+        vis.bodyMat.emissive.set(colorblind ? '#003a5c' : '#4c1d7a');
         vis.eyeMat.color.setHex(PALETTE.drifterSteel);
         vis.stunStarsGroup.visible = false;
       } else {
         vis.bodyMat.color.setHex(PALETTE.shadeBody);
-        vis.bodyMat.emissive.set('#2b0d4d');
-        vis.eyeMat.color.setHex(PALETTE.shadeEye);
+        vis.bodyMat.emissive.set(s.state === 'drain' ? (colorblind ? '#0074b8' : '#581c99') : activeEmissiveHex);
+        vis.eyeMat.color.setHex(activeEyeHex);
         vis.stunStarsGroup.visible = false;
       }
     }
     for (const [id, vis] of this.shadeVisuals.entries()) {
       if (!activeShadeIds.has(id)) {
         this.scene.remove(vis.group);
+        this.disposeObjectResources(vis.group);
+        this.scene.remove(vis.drainBeam);
+        this.disposeObjectResources(vis.drainBeam);
         this.shadeVisuals.delete(id);
       }
     }
@@ -1470,12 +1628,36 @@ export class IslandScene {
         this.vfx.spawnWave(renderPlayerPos, PALETTE.mayScarf, 3.2, 0.5);
       } else if (ev.name === 'dash') {
         this.vfx.spawnDashTrail(renderPlayerPos, p.facing);
-      } else if (ev.name === 'deposit') {
+      } else if (ev.name === 'deposit' || ev.name === 'refuel') {
         const target = state.lanterns.find((l) => l.id === ev.data.lantern_id);
         if (target) this.vfx.spawnDepositStream(renderPlayerPos, target.pos);
       } else if (ev.name === 'lantern_lit') {
         const target = state.lanterns.find((l) => l.id === ev.data.lantern_id);
         if (target) this.vfx.spawnLanternCelebration(target.pos);
+      } else if (ev.name === 'lantern_out') {
+        const target = state.lanterns.find((l) => l.id === ev.data.lantern_id);
+        if (target) {
+          this.vfx.spawnBurst(
+            [target.pos[0], target.pos[1] + 2.5, target.pos[2]],
+            PALETTE.lanternUnlit,
+            18,
+            3.8,
+            2.2,
+            1.25
+          );
+        }
+      } else if (ev.name === 'fuel_drain') {
+        const target = state.lanterns.find((l) => l.id === ev.data.lantern_id);
+        if (target) {
+          this.vfx.spawnBurst(
+            [target.pos[0], target.pos[1] + 2.9, target.pos[2]],
+            colorblind ? PALETTE.shadeEyeCb : PALETTE.shadeEye,
+            10,
+            2.6,
+            1.4,
+            0.9
+          );
+        }
       } else if (ev.name === 'pulse') {
         this.vfx.spawnPulseEffect(renderPlayerPos);
       } else if (ev.name === 'drifter_steal') {
@@ -1487,7 +1669,11 @@ export class IslandScene {
       } else if (ev.name === 'player_hit') {
         this.vfx.spawnBurst(
           renderPlayerPos,
-          ev.data.by === 'fall' ? PALETTE.drifterSteel : PALETTE.shadeEye,
+          ev.data.by === 'fall'
+            ? PALETTE.drifterSteel
+            : colorblind
+              ? PALETTE.shadeEyeCb
+              : PALETTE.shadeEye,
           16,
           4.5,
           2.5,

@@ -26,6 +26,7 @@ export const PALETTE = {
   // Bóng Mực (Shades)
   shadeBody: 0x120a1a,
   shadeEye: 0x7a3cff,
+  shadeEyeCb: 0x00b3ff,
   shadeStun: 0x3a3450,
 
   // Mây (Player)
@@ -38,6 +39,8 @@ export const PALETTE = {
   drifterSteel: 0x8fa3b8,
   dangerHex: '#FF5A5F',
   danger: 0xff5a5f,
+  dangerCbHex: '#FFFFFF',
+  dangerCb: 0xffffff,
   textLightHex: '#F5F1E6'
 } as const;
 

@@ -12,6 +12,10 @@
   --danger: #ff5a5f;
 }
 
+body.is-colorblind {
+  --danger: #ffffff;
+}
+
 * {
   box-sizing: border-box;
   user-select: none;
@@ -50,6 +54,10 @@ canvas {
   background: radial-gradient(circle at center, transparent 52%, rgba(255, 90, 95, 0.45) 100%);
   transition: opacity 0.32s ease-out;
   z-index: 5;
+}
+
+body.is-colorblind .hit-vignette {
+  background: radial-gradient(circle at center, transparent 52%, rgba(255, 255, 255, 0.52) 100%);
 }
 
 .hit-vignette.active {
@@ -160,6 +168,10 @@ canvas {
   filter: drop-shadow(0 0 6px rgba(255, 90, 95, 0.72));
 }
 
+body.is-colorblind .ico-flame.is-on {
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.85));
+}
+
 .ico-flame.is-off {
   color: rgba(183, 194, 214, 0.28);
 }
@@ -183,7 +195,31 @@ canvas {
 .hud-wind.is-active {
   border-color: var(--danger);
   background: rgba(74, 22, 34, 0.88);
+  color: var(--danger);
   animation: urgentBlink 0.7s infinite ease-in-out;
+}
+
+.hud-lowfuel {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: rgba(46, 16, 28, 0.88);
+  animation: blink1Hz 1s infinite ease-in-out;
+}
+
+body.is-colorblind .hud-wind.is-active,
+body.is-colorblind .hud-lowfuel,
+body.is-colorblind .hud-timer.is-urgent {
+  background: rgba(16, 22, 46, 0.94);
+}
+
+@keyframes blink1Hz {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .hud-timer {
@@ -304,7 +340,7 @@ input:focus-visible {
   align-items: center;
 }
 
-/* 10-slot Firefly Energy Bar */
+/* Dynamic Firefly Energy Bar (10..20 slots) */
 .hud-carried-slots {
   gap: 8px;
   padding: 8px 14px;
@@ -321,12 +357,19 @@ input:focus-visible {
 }
 
 .slot-pip {
-  width: 9px;
+  width: 7px;
   height: 14px;
-  border-radius: 3px;
+  border-radius: 2.5px;
   background: rgba(143, 163, 184, 0.2);
   border: 1px solid rgba(242, 193, 78, 0.25);
   transition: background 0.12s ease, transform 0.12s ease;
+}
+
+.setting-ctrl input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: #00b3ff;
+  cursor: pointer;
 }
 
 .slot-pip.is-filled {

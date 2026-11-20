@@ -28,13 +28,14 @@ function loadSettings(): GameSettings {
         sensitivity:
           typeof parsed.sensitivity === 'number'
             ? Math.max(40, Math.min(200, parsed.sensitivity))
-            : 100
+            : 100,
+        colorblind: typeof parsed.colorblind === 'boolean' ? parsed.colorblind : false
       };
     }
   } catch {
     // ignore storage restriction
   }
-  return { volume: 75, sensitivity: 100 };
+  return { volume: 75, sensitivity: 100, colorblind: false };
 }
 
 function saveSettings(settings: GameSettings): void {
@@ -86,6 +87,7 @@ class GameApp {
   private readonly onKeyUp: (e: KeyboardEvent) => void;
   private readonly onContextMenu: (e: MouseEvent) => void;
   private readonly onResize: () => void;
+  private readonly onBlur: () => void;
 
   constructor(private readonly mountEl: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -228,8 +230,13 @@ class GameApp {
       this.composer?.setSize(window.innerWidth, window.innerHeight);
     };
 
+    this.onBlur = () => {
+      this.pressedKeys.clear();
+    };
+
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', this.onBlur);
     this.renderer.domElement.addEventListener('contextmenu', this.onContextMenu);
     window.addEventListener('resize', this.onResize);
 
@@ -339,10 +346,26 @@ class GameApp {
         this.hud.handleEvents(combined, this.state);
       }
       this.accumulator = 0;
-      this.screen = 'playing';
       this.lastTimestamp = performance.now();
-      this.hud.showScreen('playing', this.currentNight, this.fpsAvg);
+      if (!this.handleTerminalState()) {
+        this.screen = 'playing';
+        this.hud.showScreen('playing', this.currentNight, this.fpsAvg);
+      }
     }
+  }
+
+  private handleTerminalState(): boolean {
+    if (this.state.status !== 'won' && this.state.status !== 'lost') return false;
+    this.screen = 'result';
+    if (this.state.status === 'won') {
+      this.campaignScores[this.currentNight] = this.state.score;
+    }
+    const campaignTotal = Object.values(this.campaignScores).reduce(
+      (sum, v) => sum + (v ?? 0),
+      0
+    );
+    this.hud.renderResult(this.state, this.campaignMode, campaignTotal);
+    return true;
   }
 
   private snapshotPrevActors(): void {
@@ -445,17 +468,7 @@ class GameApp {
         }
 
         // Check win / loss completion
-        if (this.state.status === 'won' || this.state.status === 'lost') {
-          this.screen = 'result';
-          if (this.state.status === 'won') {
-            this.campaignScores[this.currentNight] = this.state.score;
-          }
-          const campaignTotal = Object.values(this.campaignScores).reduce(
-            (sum, v) => sum + (v ?? 0),
-            0
-          );
-          this.hud.renderResult(this.state, this.campaignMode, campaignTotal);
-        }
+        this.handleTerminalState();
       } else if (this.screen === 'menu' || this.screen === 'intro') {
         this.elapsedSec += frameDt;
         this.camRig.yawDeg = (this.camRig.yawDeg + frameDt * 7.5) % 360;
@@ -468,6 +481,8 @@ class GameApp {
         frameDt,
         elapsedSec: this.elapsedSec,
         isMovingInput,
+        colorblind: this.settings.colorblind,
+        cameraPos: [this.camera.position.x, this.camera.position.y, this.camera.position.z],
         prevPlayerPos: this.prevPlayerPos,
         prevShadePositions: this.prevShadePositions,
         prevDrifterPositions: this.prevDrifterPositions
@@ -491,6 +506,7 @@ class GameApp {
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('blur', this.onBlur);
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
     window.removeEventListener('resize', this.onResize);
     this.camRig.dispose();

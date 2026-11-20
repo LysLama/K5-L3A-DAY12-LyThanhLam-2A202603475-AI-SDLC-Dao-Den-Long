@@ -16,7 +16,7 @@ function neutralInput(overrides: Partial<InputState> = {}): InputState {
   };
 }
 
-describe('stepTick Phase 2 Contract v1.1 rules', () => {
+describe('stepTick Contract v1.2 rules (movement, fuel, drain, dawn_survived)', () => {
   it('accelerates/stops within <= 0.1s (6 ticks) and normalizes cam_yaw_deg movement', () => {
     const w = createWorld(1, { random_motes: false, random_shades: false, motes: [] }, 1);
     for (let i = 0; i < 6; i++) {
@@ -77,7 +77,7 @@ describe('stepTick Phase 2 Contract v1.1 rules', () => {
     expect(w.status).toBe('paused');
     expect(w.tick).toBe(1);
     expect(w.simTick).toBe(0);
-    expect(w.timeLeftS).toBe(300);
+    expect(w.timeLeftS).toBe(240);
     expect(w.player.dashCdTicks).toBe(40);
     expect(evPause).toEqual([{ type: 'event', tick: 1, name: 'paused', data: {} }]);
 
@@ -172,7 +172,7 @@ describe('stepTick Phase 2 Contract v1.1 rules', () => {
     expect(w.player.invulnTicks).toBe(90);
   });
 
-  it('scores +10 per deposited mote, +100 per lantern, +2*floor(s) + 50*flames, and blocks newly lit safe zone in <= 30 ticks', () => {
+  it('applies +5/mote +100 lantern v1.2 score without early all_lit win and pushes shades out of 6m safe zone', () => {
     const w = createWorld(1, {
       random_motes: false,
       random_shades: false,
@@ -190,8 +190,10 @@ describe('stepTick Phase 2 Contract v1.1 rules', () => {
     }, 1);
 
     const evs = stepTick(w, neutralInput({ interact: true }));
-    expect(evs.map((e) => e.name)).toEqual(['deposit', 'lantern_lit', 'game_over']);
-    expect(w.score).toBe(10 + 100 + 99 * 2 + 3 * 50); // 458
+    expect(evs.map((e) => e.name)).toEqual(['deposit', 'lantern_lit']);
+    expect(w.status).toBe('playing'); // No early win on lighting all 5 lanterns!
+    expect(w.score).toBe(5 + 100);
+    expect(w.player.capacity).toBe(12);
 
     // Test 30-tick safe zone pushout when L1 lights with shade inside
     const w2 = createWorld(1, {
@@ -244,5 +246,164 @@ describe('stepTick Phase 2 Contract v1.1 rules', () => {
     // Immediate Pulse hits the fleeing drifter in 3D radius 5m!
     const pulseEvs = stepTick(w, neutralInput({ pulse: true }));
     expect(pulseEvs.some((e) => e.name === 'drifter_drop' && e.data.amount === 3)).toBe(true);
+  });
+
+  it('decays fuel at 1.0/s, emits lantern_out at 0, relights in 5 motes (+40), and scales capacity to max 20', () => {
+    const w = createWorld(1, {
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      player: { pos: [0, 0, 24], carried: 6, flames: 3, successful_lights: 4 },
+      lanterns: [{ id: 'L1', pos: [0, 0, 25], lit: true, fuel: 1.0, ever_lit: true }]
+    }, 1);
+    expect(w.player.capacity).toBe(18);
+
+    // 60 ticks of natural decay brings 1.0 -> 0 -> lantern_out
+    let outEv: unknown = null;
+    for (let i = 0; i < 60; i++) {
+      const evs = stepTick(w, neutralInput());
+      const found = evs.find((e) => e.name === 'lantern_out');
+      if (found) outEv = found;
+    }
+    expect(outEv).toEqual({ type: 'event', tick: 60, name: 'lantern_out', data: { lantern_id: 'L1' } });
+    expect(w.lanterns[0].lit).toBe(false);
+    expect(w.lanterns[0].fuelTicks).toBe(0);
+    expect(w.lanterns[0].deposited).toBe(0);
+    expect(w.lanterns[0].everLit).toBe(true);
+
+    // Relight takes only 5 motes and grants +5*5 + 40 = 65 score, capacity rises 18 -> 20
+    const relightEvs = stepTick(w, neutralInput({ interact: true }));
+    expect(relightEvs).toContainEqual({
+      type: 'event',
+      tick: 61,
+      name: 'lantern_lit',
+      data: { lantern_id: 'L1', relight: true }
+    });
+    expect(w.player.carried).toBe(1);
+    expect(w.player.capacity).toBe(20);
+    expect(w.lanterns[0].relitCount).toBe(1);
+    expect(w.score).toBe(65);
+  });
+
+  it('refuels partial lanterns, skips full lanterns, enforces fuel == 30 safe zone boundary, and pushes shades when refueled >= 30', () => {
+    const w = createWorld(1, {
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      player: { pos: [0, 0, 24], carried: 10, flames: 3 },
+      shades: [{ id: 'S1', pos: [0, 1, 26], state: 'drain', target_lantern_id: 'L1' }],
+      lanterns: [
+        { id: 'L2', pos: [0, 0, 24.5], lit: true, fuel: 100 }, // closer, but FULL -> must skip!
+        { id: 'L1', pos: [0, 0, 25], lit: true, fuel: 25 } // missing 75 -> ceil(75/10)=8 -> uses 8 motes -> fuel 100
+      ]
+    }, 1);
+
+    const refuelEvs = stepTick(w, neutralInput({ interact: true }));
+    const refuel = refuelEvs.find((e) => e.name === 'refuel');
+    expect(refuel).toBeDefined();
+    expect(refuel?.data.lantern_id).toBe('L1');
+    expect(refuel?.data.amount).toBe(8);
+    expect(w.player.carried).toBe(2);
+    expect(w.score).toBe(40); // 8 * 5
+    expect(w.shades[0].state).not.toBe('drain'); // exited drain on refuel >= 30 and gets pushed out
+    expect(w.shades[0].safePushTicksLeft).toBe(30);
+    for (let i = 0; i < 30; i++) stepTick(w, neutralInput());
+    expect(Math.hypot(w.shades[0].pos[0], w.shades[0].pos[2] - 25)).toBeGreaterThanOrEqual(5.99);
+
+    // Safe zone stays ACTIVE at exact fuel == 30.0 (30.017 -> 30.0 after 1 tick)
+    const w30 = createWorld(1, {
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      player: { pos: [0, 0, 0], carried: 0, flames: 3 },
+      shades: [{ id: 'S1', pos: [0, 1, 28], state: 'chase' }],
+      lanterns: [{ id: 'L1', pos: [0, 0, 25], lit: true, fuel: 30.01667 }] // 1801 ticks -> 1800 after step 2 = exact 30.0
+    }, 1);
+    stepTick(w30, neutralInput());
+    expect(w30.lanterns[0].fuelTicks).toBe(1800);
+    expect(Math.hypot(w30.shades[0].pos[0], w30.shades[0].pos[2] - 25)).toBeGreaterThanOrEqual(5.99);
+  });
+
+  it('transitions wander -> drain on weak lantern, drains 5/s, emits fuel_drain every 60 ticks, awards +15 total on Pulse, and resolves dawn_survived vs no_flames priority', () => {
+    const w = createWorld(1, {
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      player: { pos: [0, 0, 20.5], carried: 3, flames: 3 },
+      lanterns: [{ id: 'L1', pos: [0, 0, 25], lit: true, fuel: 25 }],
+      shades: [{ id: 'S1', pos: [0, 1, 22.8], state: 'wander' }] // >12m away? Wait: player at 20.5 is within 12m, move player far first!
+    }, 1);
+    w.player.pos = [0, 0, 0]; // outside 12m so S1 wanders cleanly to L1 (weak)
+
+    // S1 wanders to L1 and enters drain within <= 2m
+    for (let i = 0; i < 20; i++) stepTick(w, neutralInput());
+    expect(w.shades[0].state).toBe('drain');
+
+    // Run 60 ticks while draining -> emits fuel_drain at drain tick 60
+    let fuelDrainSeen = false;
+    const fuelBefore = w.lanterns[0].fuelTicks;
+    for (let i = 0; i < 60; i++) {
+      const evs = stepTick(w, neutralInput());
+      if (evs.some((e) => e.name === 'fuel_drain' && e.data.shade_id === 'S1' && e.data.lantern_id === 'L1')) {
+        fuelDrainSeen = true;
+      }
+    }
+    expect(fuelDrainSeen).toBe(true);
+    // Drained at 1 (natural) + 5 (shade drain) = 6 ticks/tick => 360 ticks over 60 ticks
+    expect(fuelBefore - w.lanterns[0].fuelTicks).toBe(360);
+
+    // Move Mây inside 6m -> triggers drain -> chase; reset another drain shade to test Pulse +15 total score
+    w.shades[0].state = 'drain';
+    w.player.pos = [0, 0, 24.5];
+    stepTick(w, neutralInput({ pulse: true }));
+    expect(w.shades[0].state).toBe('stunned');
+    expect(w.score).toBe(15); // Total +15 if shade was draining immediately before pulse!
+
+    // Dawn win (3/5 on Night 1 -> dawn_survived + bonus 50+floor(fuel) per lit lantern + 50 per flame)
+    const wDawn = createWorld(1, {
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      player: { pos: [0, 0, 0], flames: 2 },
+      time_left_s: 0.02, // expires after 2 ticks
+      lanterns: [
+        { id: 'L1', lit: true, fuel: 50.9 },
+        { id: 'L2', lit: true, fuel: 40.2 },
+        { id: 'L3', lit: true, fuel: 20.0 }
+      ]
+    }, 1);
+    stepTick(wDawn, neutralInput());
+    const finalEvs = stepTick(wDawn, neutralInput());
+    expect(finalEvs).toContainEqual({
+      type: 'event',
+      tick: 2,
+      name: 'game_over',
+      data: { result: 'won', reason: 'dawn_survived' }
+    });
+    // Remaining fuels at tick 2: 50.9 - 2/60 = 50.86 (floor 50), 40.2 - 2/60 = 40.16 (floor 40), 20 - 2/60 = 19.96 (floor 19)
+    // Score = (50+50) + (50+40) + (50+19) + 2*50 = 100 + 90 + 69 + 100 = 359
+    expect(wDawn.score).toBe(359);
+
+    // Losing all flames on final tick -> no_flames takes precedence over dawn_survived
+    const wFinalHit = createWorld(1, {
+      random_motes: false,
+      random_shades: false,
+      motes: [],
+      player: { pos: [0, 0, 0], flames: 1 },
+      shades: [{ id: 'S1', pos: [0, 1, 0.4], state: 'chase' }],
+      time_left_s: 1 / 60,
+      lanterns: [
+        { id: 'L1', lit: true, fuel: 80 },
+        { id: 'L2', lit: true, fuel: 80 },
+        { id: 'L3', lit: true, fuel: 80 }
+      ]
+    }, 1);
+    const lossEvs = stepTick(wFinalHit, neutralInput());
+    expect(lossEvs).toContainEqual({
+      type: 'event',
+      tick: 1,
+      name: 'game_over',
+      data: { result: 'lost', reason: 'no_flames' }
+    });
   });
 });
