@@ -23,8 +23,9 @@ function getDiscCenterForNight(night: NightId, x: number): number {
 }
 
 /**
- * Computes distance clearance weight `w in [0, 1]` where `0` strictly pins playable walkways,
- * plazas, lanterns, motes, jump pads, docks, bridges, and ramps flush to the simulation floor.
+ * Computes distance clearance weight `w in [0, 1]` where `0` strictly pins playable plazas,
+ * lanterns, bridge ends, docks, and Night 3 central structures/ramps flush to simulation elevation.
+ * When `avoidMotesAndPaths` is true (for solid obstacles), also clears radial footpaths, motes, and jump pads.
  */
 function computeReliefWeight(
   night: NightId,
@@ -32,7 +33,8 @@ function computeReliefWeight(
   radius: number,
   wx: number,
   wz: number,
-  extraPad = 0
+  extraPad = 0,
+  avoidMotesAndPaths = true
 ): number {
   const cfg = getMapConfig(night);
   const rLocal = Math.hypot(wx - centerX, wz);
@@ -46,49 +48,56 @@ function computeReliefWeight(
   // Pin spawn plaza
   const spawnX = night === 2 ? centerX : cfg.spawnPos[0];
   const spawnZ = cfg.spawnPos[2];
-  pinCircle(spawnX, spawnZ, 4.6, 3.2);
+  pinCircle(spawnX, spawnZ, 4.4, 3.0);
 
   // Pin Night 3 Tier 1 & Tier 2 central structure, ramps & south spawn vista behind camera
   if (night === 3) {
-    pinCircle(0, 0, 26.5, 4.5);
+    pinCircle(0, 0, 26.2, 4.0);
     if (getRampHeightAt(wx, wz) !== null) return 0;
     const southVista = distToSegment2D(wx, wz, 0, 28, 0, 46);
-    w = Math.min(w, smoothstep(5.5 + extraPad, 8.0 + extraPad, southVista));
+    w = Math.min(w, smoothstep(4.2 + extraPad, 7.2 + extraPad, southVista));
   }
 
   // Pin Night 1 dock south corridor & Night 2 bridge ends
   if (night === 1) {
-    const dockDist = distToSegment2D(wx, wz, 0, 25, 0, 42);
-    w = Math.min(w, smoothstep(3.2 + extraPad, 5.5 + extraPad, dockDist));
+    const dockDist = distToSegment2D(wx, wz, 0, 26, 0, 42);
+    w = Math.min(w, smoothstep(2.8 + extraPad, 5.2 + extraPad, dockDist));
   }
   if (night === 2) {
-    const bridgeCorridor = distToSegment2D(wx, wz, 18, 0, 52, 0);
-    w = Math.min(w, smoothstep(3.6 + extraPad, 6.2 + extraPad, bridgeCorridor));
+    const bridgeCorridor = distToSegment2D(wx, wz, 20, 0, 50, 0);
+    w = Math.min(w, smoothstep(3.4 + extraPad, 6.0 + extraPad, bridgeCorridor));
+    if (avoidMotesAndPaths) {
+      const mainAvenue = distToSegment2D(wx, wz, 0, 0, 70, 0);
+      w = Math.min(w, smoothstep(3.6 + extraPad, 5.8 + extraPad, mainAvenue));
+    }
   }
 
-  // Pin lanterns & radial star footpaths to ground-level lanterns
+  // Pin lanterns, and optionally radial paths / motes / jump pads / charms
   for (const l of cfg.lanterns) {
     if (l.pos[1] !== 0) continue;
     const lxDisc = getDiscCenterForNight(night, l.pos[0]);
     if (lxDisc !== centerX) continue;
-    pinCircle(l.pos[0], l.pos[2], 3.4, 2.8);
-    const pathDist = distToSegment2D(wx, wz, spawnX, spawnZ, l.pos[0], l.pos[2]);
-    w = Math.min(w, smoothstep(2.4 + extraPad, 4.6 + extraPad, pathDist));
+    pinCircle(l.pos[0], l.pos[2], 3.2, 2.6);
+    if (avoidMotesAndPaths) {
+      const pathDist = distToSegment2D(wx, wz, spawnX, spawnZ, l.pos[0], l.pos[2]);
+      w = Math.min(w, smoothstep(2.2 + extraPad, 4.2 + extraPad, pathDist));
+    }
   }
 
-  // Pin motes, jump pads, charms
-  for (const m of cfg.moteSpawnPoints) {
-    if (m[1] !== 0) continue;
-    if (Math.hypot(m[0] - centerX, m[2]) > radius + 1) continue;
-    pinCircle(m[0], m[2], 1.5, 1.8);
+  if (avoidMotesAndPaths) {
+    for (const m of cfg.moteSpawnPoints) {
+      if (m[1] !== 0) continue;
+      if (Math.hypot(m[0] - centerX, m[2]) > radius + 1) continue;
+      pinCircle(m[0], m[2], 1.4, 1.6);
+    }
   }
   for (const jp of cfg.jumpPads) {
     if (jp.pos[1] !== 0) continue;
-    pinCircle(jp.pos[0], jp.pos[2], 2.2, 2.2);
+    pinCircle(jp.pos[0], jp.pos[2], 2.2, 2.0);
   }
   for (const c of cfg.charms) {
     if (c.pos[1] !== 0) continue;
-    pinCircle(c.pos[0], c.pos[2], 2.5, 2.2);
+    pinCircle(c.pos[0], c.pos[2], 2.4, 2.0);
   }
 
   // Softly blend outer cliff lip down near shoreline so skirt/stone rim meets cleanly
@@ -100,8 +109,8 @@ function computeReliefWeight(
 
 /**
  * Deterministic multi-octave tropical island relief height (meters above simulation plane Y=0).
- * Keeps interior walkable ground gently contoured (`<= 0.08m`) so characters/motes never clip
- * into hills, while sculpting lush raised perimeter jungle bluffs (`+0.5..+2.2m`) at outer edges.
+ * Keeps spawn, lanterns, bridges, and ramps flush while forming rolling grassy hills across
+ * forest clearings and higher perimeter jungle bluffs.
  */
 export function sampleIslandElevation(
   night: NightId,
@@ -113,25 +122,49 @@ export function sampleIslandElevation(
   const lx = worldX - centerX;
   const lz = worldZ;
   const r = Math.hypot(lx, lz);
-  const weight = computeReliefWeight(night, centerX, radius, worldX, worldZ, 0);
+  if (r > radius) return 0;
+
+  const weight = computeReliefWeight(night, centerX, radius, worldX, worldZ, 0, false);
   if (weight <= 0.001) return 0;
 
   const angle = Math.atan2(lz, lx);
   const rNorm = r / Math.max(1, radius);
 
-  // Subtle playable meadow micro-contour inside central clearings (<= 0.08m, zero player clipping)
-  const microUndulation =
-    0.04 * (0.5 + 0.5 * Math.sin(lx * 0.24 + lz * 0.17 + night)) * smoothstep(0.25, 0.72, rNorm);
+  // Rolling grassy hills throughout interior clearings (0.45..0.95m gentle playable slopes)
+  const midMound =
+    smoothstep(0.18, 0.45, rNorm) *
+    (0.55 + 0.45 * Math.sin(lx * 0.19 + lz * 0.15 + night * 0.8) * Math.cos(lz * 0.21 - lx * 0.14)) *
+    0.88;
 
-  // Dramatic outer forested cliff bluff ring along r ∈ [0.78..0.98] * radius
-  const outerBluffBand = smoothstep(0.76, 0.89, rNorm) * (1 - smoothstep(0.94, 1.0, rNorm));
+  // Dramatic outer forested cliff bluff ring along rNorm ∈ [0.68..0.98]
+  const outerBluffBand = smoothstep(0.62, 0.86, rNorm) * (1 - smoothstep(0.94, 1.0, rNorm));
   const ridgeWave =
     0.6 +
     0.4 * Math.sin(angle * (night === 1 ? 5 : night === 2 ? 4 : 6) + night * 1.1) +
     0.25 * Math.cos(lx * 0.21 - lz * 0.19 + night);
 
-  const bluffHeight = (night === 3 ? 2.1 : night === 2 ? 1.55 : 1.75) * outerBluffBand * ridgeWave;
-  return Math.max(0, weight * (microUndulation + bluffHeight));
+  const bluffHeight = (night === 3 ? 2.05 : night === 2 ? 1.45 : 1.70) * outerBluffBand * ridgeWave;
+  return Math.max(0, weight * (midMound + bluffHeight));
+}
+
+/**
+ * Returns the visual ground elevation offset (`>= 0`) for characters, shades, and motes on base island ground
+ * so rendered actors walk smoothly OVER rolling 3D hills instead of clipping through terrain.
+ */
+export function getVisualGroundLift(night: NightId, worldX: number, worldZ: number, simY: number): number {
+  // Never lift when falling below cliff rim or standing on elevated Night 3 tiers/ramps
+  if (simY < -0.1) return 0;
+  if (night === 3 && (simY > 0.25 || Math.hypot(worldX, worldZ) < 25.0)) return 0;
+
+  if (night === 1) {
+    return Math.hypot(worldX, worldZ) <= 40.0 ? sampleIslandElevation(1, 0, 40, worldX, worldZ) : 0;
+  }
+  if (night === 2) {
+    if (Math.hypot(worldX, worldZ) <= 28.0) return sampleIslandElevation(2, 0, 28, worldX, worldZ);
+    if (Math.hypot(worldX - 70, worldZ) <= 28.0) return sampleIslandElevation(2, 70, 28, worldX, worldZ);
+    return 0;
+  }
+  return Math.hypot(worldX, worldZ) <= 45.0 ? sampleIslandElevation(3, 0, 45, worldX, worldZ) : 0;
 }
 
 /**
@@ -148,8 +181,8 @@ export function isClearPlayableSpot(
 ): boolean {
   const rLocal = Math.hypot(worldX - centerX, worldZ);
   if (rLocal < 5.0 || rLocal > radius - 0.8) return false;
-  const w = computeReliefWeight(night, centerX, radius, worldX, worldZ, clearanceMargin);
-  return w >= 0.35;
+  const w = computeReliefWeight(night, centerX, radius, worldX, worldZ, clearanceMargin, true);
+  return w >= 0.32;
 }
 
 /**
@@ -214,17 +247,17 @@ export function buildCoastalAndOffshoreDetails(
   for (let i = 0; i < cliffCount; i++) {
     const a = (i / cliffCount) * Math.PI * 2;
     if (night === 1 && Math.abs(a - Math.PI / 2) < 0.16) continue;
-    const x = centerX + Math.cos(a) * (radius - 0.15);
-    const z = Math.sin(a) * (radius - 0.15);
-    if (night === 2 && x > 22 && x < 48 && Math.abs(z) < 6.4) continue;
+    const x = centerX + Math.cos(a) * (radius - 0.55);
+    const z = Math.sin(a) * (radius - 0.55);
+    if (night === 2 && x > 20 && x < 50 && Math.abs(z) < 9.5) continue;
 
-    const h = 2.4 + ((i * 7) % 5) * 0.45;
-    const w = 1.45 + ((i * 11) % 4) * 0.35;
+    const h = 2.2 + ((i * 7) % 5) * 0.38;
+    const w = 1.35 + ((i * 11) % 4) * 0.30;
     const crag = new THREE.DodecahedronGeometry(w, 0);
     crag.scale(1.05, h / (w * 1.4), 0.9);
     crag.rotateY(a + i * 0.7);
-    crag.translate(x, -1.35 - (i % 2) * 0.35, z);
-    cliffParts.push(colorizeGeo(crag, i % 3 === 0 ? '#2f4b44' : '#333c57'));
+    crag.translate(x, -1.85 - (i % 2) * 0.35, z);
+    cliffParts.push(colorizeGeo(crag, i % 3 === 0 ? '#375c4f' : '#404b69'));
   }
 
   // Sculpted offshore jungle islets & sea-stack crags out in the twilight archipelago
@@ -254,12 +287,12 @@ export function buildCoastalAndOffshoreDetails(
     const isl = isletSeeds[i];
     const rockBase = new THREE.ConeGeometry(isl.r, isl.h + 10.5, 7);
     rockBase.translate(isl.x, -10.5 + (isl.h + 10.5) * 0.46, isl.z);
-    cliffParts.push(colorizeGeo(rockBase, '#2d354d'));
+    cliffParts.push(colorizeGeo(rockBase, '#3d4863'));
 
     const mossCap = new THREE.DodecahedronGeometry(isl.r * 0.65, 0);
     mossCap.scale(1.25, 0.45, 1.15);
     mossCap.translate(isl.x + 0.3, -0.3 + isl.h * 0.25, isl.z - 0.2);
-    cliffParts.push(colorizeGeo(mossCap, '#2b5949'));
+    cliffParts.push(colorizeGeo(mossCap, '#356b57'));
 
     // Miniature tropical tree crowns atop offshore islets so horizon feels like an archipelago
     const crown1 = new THREE.IcosahedronGeometry(isl.r * 0.34, 0);
@@ -286,7 +319,12 @@ export function buildCoastalAndOffshoreDetails(
   if (cliffParts.length > 0) {
     const cliffMesh = new THREE.Mesh(
       mergeParts(cliffParts),
-      new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })
+      new THREE.MeshLambertMaterial({
+        vertexColors: true,
+        emissive: '#141c2e',
+        emissiveIntensity: 0.42,
+        flatShading: true
+      })
     );
     cliffMesh.matrixAutoUpdate = false;
     cliffMesh.updateMatrix();
@@ -322,7 +360,7 @@ export function buildNight3CliffButtresses(): THREE.Mesh {
     rock.scale(0.95, 1.55 + (i % 3) * 0.25, 0.85);
     rock.rotateY(a);
     rock.translate(x, 1.45, z);
-    parts.push(colorizeGeo(rock, i % 2 === 0 ? '#323a52' : '#2a4740'));
+    parts.push(colorizeGeo(rock, i % 2 === 0 ? '#434d6b' : '#385f55'));
   }
 
   // Crags around Tier 2 sanctuary cliff wall (r = 8.0, height 6.0)
@@ -334,12 +372,17 @@ export function buildNight3CliffButtresses(): THREE.Mesh {
     pillarRock.scale(0.85, 2.8 + (i % 2) * 0.6, 0.85);
     pillarRock.rotateY(a * 1.3);
     pillarRock.translate(x, 2.9, z);
-    parts.push(colorizeGeo(pillarRock, i % 2 === 0 ? '#363e57' : '#2d4a43'));
+    parts.push(colorizeGeo(pillarRock, i % 2 === 0 ? '#4a5575' : '#3d665b'));
   }
 
   const mesh = new THREE.Mesh(
     mergeParts(parts),
-    new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })
+    new THREE.MeshLambertMaterial({
+      vertexColors: true,
+      emissive: '#151d2e',
+      emissiveIntensity: 0.45,
+      flatShading: true
+    })
   );
   mesh.matrixAutoUpdate = false;
   mesh.updateMatrix();

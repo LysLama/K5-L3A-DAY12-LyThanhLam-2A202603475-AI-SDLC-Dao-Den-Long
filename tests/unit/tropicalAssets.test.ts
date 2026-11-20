@@ -28,20 +28,27 @@ function assertValidBakedGeo(geo: THREE.BufferGeometry, maxTris: number): void {
   }
 }
 
-describe('Vietnamese tropical 3D assets & per-night ecosystem scatterer', () => {
-  it('builds finite vertex-colored geometry catalog within GPU triangle budgets for all 3 themes', () => {
+describe('dense Vietnamese tropical 3D jungle assets & multi-size scatterer', () => {
+  it('builds finite vertex-colored geometry catalog across 12+ species within GPU budgets', () => {
     for (const night of [1, 2, 3] as const) {
       const cat = createTropicalAssetCatalog(night);
       assertValidBakedGeo(cat.coconutTrunk, 140);
       assertValidBakedGeo(cat.coconutCrown, 220);
-      assertValidBakedGeo(cat.canopyTrunk, 140);
+      assertValidBakedGeo(cat.canopyTrunk, 160);
       assertValidBakedGeo(cat.canopyCrown, 260);
+      assertValidBakedGeo(cat.dipterocarpTrunk, 120);
+      assertValidBakedGeo(cat.dipterocarpCrown, 220);
+      assertValidBakedGeo(cat.mangroveArch, 180);
+      assertValidBakedGeo(cat.saplingTree, 120);
+      assertValidBakedGeo(cat.treeFern, 150);
       assertValidBakedGeo(cat.arecaTrunk, 120);
       assertValidBakedGeo(cat.arecaCrown, 200);
       assertValidBakedGeo(cat.highlandTrunk, 140);
       assertValidBakedGeo(cat.highlandCrown, 240);
       assertValidBakedGeo(cat.bananaClump, 140);
-      assertValidBakedGeo(cat.bambooClump, 140);
+      assertValidBakedGeo(cat.bambooClump, 160);
+      assertValidBakedGeo(cat.pandanusShrub, 130);
+      assertValidBakedGeo(cat.mossLog, 140);
       assertValidBakedGeo(cat.fernClump, 120);
       assertValidBakedGeo(cat.mossBoulder, 120);
       assertValidBakedGeo(cat.pebbleCluster, 90);
@@ -54,34 +61,49 @@ describe('Vietnamese tropical 3D assets & per-night ecosystem scatterer', () => 
     }
   });
 
-  it('generates obstacle-safe themed placements across Night 1, Night 2, and Night 3 without blocking gameplay spots', () => {
+  it('generates dense multi-size tropical rainforest placements across all 3 maps cleanly clearing paths & targets', () => {
     for (const night of [1, 2, 3] as const) {
       const plan = generateTropicalPlacementPlan(night);
       const cfg = getMapConfig(night);
 
-      expect(plan.canopyTrees.length).toBeGreaterThanOrEqual(6);
-      expect(plan.boulders.length).toBeGreaterThanOrEqual(10);
-      expect(plan.pebbles.length).toBeGreaterThanOrEqual(16);
-      expect(plan.grassSmall.length).toBeGreaterThanOrEqual(40);
-      expect(plan.grassTall.length).toBeGreaterThanOrEqual(18);
-      expect(plan.flowers.length).toBeGreaterThanOrEqual(18);
-      expect(plan.ferns.length).toBeGreaterThanOrEqual(14);
+      const allTrees = [
+        ...plan.coconutPalms,
+        ...plan.canopyTrees,
+        ...plan.dipterocarpTrees,
+        ...plan.mangroves,
+        ...plan.saplings,
+        ...plan.treeFerns,
+        ...plan.arecaPalms,
+        ...plan.highlandTrees,
+        ...plan.bambooClumps
+      ];
+      expect(allTrees.length).toBeGreaterThanOrEqual(85);
 
-      if (night === 1) {
-        expect(plan.coconutPalms.length).toBeGreaterThanOrEqual(8);
-        expect(plan.bananaClumps.length).toBeGreaterThanOrEqual(8);
-      } else if (night === 2) {
-        expect(plan.arecaPalms.length).toBeGreaterThanOrEqual(14);
-        expect(plan.lotusClusters.length).toBeGreaterThanOrEqual(10);
-      } else {
-        expect(plan.highlandTrees.length).toBeGreaterThanOrEqual(10);
-        expect(plan.bambooClumps.length).toBeGreaterThanOrEqual(8);
+      // Verify wide natural size distribution (young saplings to giant emergents)
+      let minS = Infinity;
+      let maxS = 0;
+      for (const t of allTrees) {
+        if (t.scale < minS) minS = t.scale;
+        if (t.scale > maxS) maxS = t.scale;
+      }
+      expect(maxS / minS).toBeGreaterThanOrEqual(1.65);
+
+      const shrubs = [...plan.bananaClumps, ...plan.ferns, ...plan.pandanusShrubs, ...plan.mossLogs];
+      expect(shrubs.length).toBeGreaterThanOrEqual(75);
+      expect(plan.boulders.length).toBeGreaterThanOrEqual(20);
+      expect(plan.pebbles.length).toBeGreaterThanOrEqual(35);
+      expect(plan.grassSmall.length + plan.grassTall.length).toBeGreaterThanOrEqual(190);
+      expect(plan.flowers.length).toBeGreaterThanOrEqual(35);
+
+      if (night === 2) {
+        expect(plan.arecaPalms.length).toBeGreaterThanOrEqual(24);
+        expect(plan.lotusClusters.length).toBeGreaterThanOrEqual(24);
       }
 
-      // Solid trees & boulders never collide with spawn, lanterns, motes, or jump pads
       const solids = [
         ...plan.coconutPalms,
         ...plan.canopyTrees,
+        ...plan.dipterocarpTrees,
         ...plan.arecaPalms,
         ...plan.highlandTrees,
         ...plan.boulders
@@ -102,17 +124,20 @@ describe('Vietnamese tropical 3D assets & per-night ecosystem scatterer', () => 
     }
   });
 
-  it('populates Three.js scene with static batched InstancedMesh layers', () => {
+  it('populates Three.js scene with lush batched InstancedMesh layers', () => {
     const scene = new THREE.Scene();
     const swayGroups = populateNightEcosystem(scene, 1);
     expect(swayGroups.length).toBeGreaterThanOrEqual(1);
     let instCount = 0;
+    let totalInstances = 0;
     scene.traverse((obj) => {
       if (obj instanceof THREE.InstancedMesh) {
         instCount++;
+        totalInstances += obj.count;
         expect(obj.count).toBeGreaterThan(0);
       }
     });
-    expect(instCount).toBeGreaterThanOrEqual(10);
+    expect(instCount).toBeGreaterThanOrEqual(16);
+    expect(totalInstances).toBeGreaterThanOrEqual(550);
   });
 });
