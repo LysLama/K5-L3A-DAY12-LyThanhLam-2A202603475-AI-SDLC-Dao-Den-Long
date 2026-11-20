@@ -68,7 +68,7 @@ Các yếu tố sáng tạo được cô lập hoàn toàn trong lớp trình di
 1. **Âm thanh cổ tích sinh bằng Web Audio API ([`src/client/audio.ts`](src/client/audio.ts)):** Tạo âm thanh chuông gió khi nhặt đom đóm, hợp âm ấm khi thắp Đèn Lồng, sóng cộng hưởng khi Tỏa Sáng và nhạc hiệu thắng/thua (có nút tắt `[M]`).
 2. **Đảo thức tỉnh theo ánh sáng ([`src/client/sceneBuilder.ts`](src/client/sceneBuilder.ts)):** Mỗi Đèn Lồng Lớn khi thắp sáng sẽ thắp sáng các tinh thể quanh chân đèn, hiển thị vòng an toàn `5.5 m` và chuyển dần sắc độ bầu trời + sương mù từ tím đen sang ấm áp.
 
-**Bằng chứng phần lõi không đổi:** `npm run verify` chạy `node dist-headless/cli.mjs` độc lập hoàn toàn với `src/client/`, xác minh 18/18 unit & contract test pass, kịch bản thắng/thua/rơi đảo đạt chuẩn Test Contract v1.0, và 2 lần chạy `--seed 42 --ticks 600` cho output giống hệt nhau từng byte (`92,401` bytes).
+**Bằng chứng phần lõi không đổi:** `npm run verify` chạy `node dist-headless/cli.mjs` độc lập hoàn toàn với `src/client/`, xác minh 19/19 unit & contract test pass, kịch bản thắng/thua/rơi đảo đạt chuẩn Test Contract v1.0, và 2 lần chạy `--seed 42 --ticks 600` cho output giống hệt nhau từng byte (`92,401` bytes).
 
 ---
 

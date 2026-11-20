@@ -140,13 +140,22 @@ export function createWorld(seed: number, scenario?: ScenarioConfig): SimState {
 
   const motes: MoteState[] = [];
   if (scenario?.motes !== undefined) {
+    const usedMoteIds = new Set<string>();
+    for (const entry of scenario.motes) {
+      if (!Array.isArray(entry) && entry.id !== undefined) {
+        usedMoteIds.add(entry.id);
+      }
+    }
     let seq = 1;
     for (const entry of scenario.motes) {
-      if (Array.isArray(entry)) {
-        motes.push({ id: `M${seq++}`, pos: [entry[0], entry[1], entry[2]] });
+      if (Array.isArray(entry) || entry.id === undefined) {
+        while (usedMoteIds.has(`M${seq}`)) seq += 1;
+        const id = `M${seq++}`;
+        usedMoteIds.add(id);
+        const pos = Array.isArray(entry) ? entry : entry.pos;
+        motes.push({ id, pos: [pos[0], pos[1], pos[2]] });
       } else {
-        const id = entry.id ?? `M${seq++}`;
-        motes.push({ id, pos: [entry.pos[0], entry.pos[1], entry.pos[2]] });
+        motes.push({ id: entry.id, pos: [entry.pos[0], entry.pos[1], entry.pos[2]] });
       }
     }
   } else if (randomMotes) {
@@ -158,9 +167,22 @@ export function createWorld(seed: number, scenario?: ScenarioConfig): SimState {
 
   const shades: ShadeState[] = [];
   if (scenario?.shades !== undefined) {
+    const usedShadeIds = new Set<string>();
+    for (const entry of scenario.shades) {
+      if (entry.id !== undefined) {
+        usedShadeIds.add(entry.id);
+      }
+    }
     let seq = 1;
     for (const entry of scenario.shades) {
-      const id = entry.id ?? `S${seq++}`;
+      let id: string;
+      if (entry.id === undefined) {
+        while (usedShadeIds.has(`S${seq}`)) seq += 1;
+        id = `S${seq++}`;
+        usedShadeIds.add(id);
+      } else {
+        id = entry.id;
+      }
       const state = entry.state ?? 'chase';
       shades.push({
         id,

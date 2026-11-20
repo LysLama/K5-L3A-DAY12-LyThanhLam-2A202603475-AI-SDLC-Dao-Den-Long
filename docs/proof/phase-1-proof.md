@@ -7,7 +7,7 @@ Tất cả kiểm chứng dưới đây được chạy trực tiếp sau lần 
 | Yêu cầu (PRD-0 / Test Contract v1.0) | Cách kiểm chứng | Tệp / Lệnh bằng chứng | Kết quả thực tế quan sát |
 |---|---|---|---|
 | Khai báo `game.contract.json` v1.0 & đồng bộ `TUNING` | Unit test so sánh sâu `TUNING` với `game.contract.json` | `tests/smoke.test.ts`, `tests/unit/world.test.ts` (`npm test`) | **Đạt** (deepEqual khớp 100%) |
-| Đảo tròn, 5 Đèn Lồng, Đom đóm, Bóng Mực & Merge `scenario` | Unit test khởi tạo mặc định và `scenario` ghi đè không phát event/score | `tests/unit/world.test.ts` | **Đạt** (4/4 test pass) |
+| Đảo tròn, 5 Đèn Lồng, Đom đóm, Bóng Mực & Merge `scenario` | Unit test khởi tạo mặc định và `scenario` ghi đè (kể cả ID hỗn hợp) không phát event/score | `tests/unit/world.test.ts` | **Đạt** (5/5 test pass) |
 | Di chuyển theo `cam_yaw_deg`, chuẩn hóa vector, sườn lên button, nhảy/rơi, `pickup`, `pulse` trước `hit`, `safe_radius`, `all_lit` trước `dawn` | Unit test từng cơ chế và biên trong `stepTick` | `tests/unit/step.test.ts` | **Đạt** (7/7 test pass) |
 | Chuẩn CLI `--seed`, `--night 1`, exit code `2` khi sai JSON/schema (`inputs`/`scenario`), exit `1` khi sai flag | Integration test chạy tiến trình `node dist-headless/cli.mjs` | `tests/contract/headless.test.ts` | **Đạt** (4/4 test pass) |
 | Tương thích điều khiển client 3D & camera Y-up | Unit test `mapKeysToInput` + tích có hướng ở yaw `0°`, `45°`, `90°` | `tests/unit/clientInput.test.ts` | **Đạt** (2/2 test pass) |
@@ -28,7 +28,7 @@ dist/assets/index-Bss0dMaw.js   568.62 kB │ gzip: 143.64 kB
 ✓ built in 211ms
 
  Test Files  5 passed (5)
-      Tests  18 passed (18)
+      Tests  19 passed (19)
   - win-all-lit: PASS (ticks=171, score=1870)
   - loss-no-flames: PASS (ticks=12)
   - loss-dawn: PASS (ticks=12)

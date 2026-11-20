@@ -89,4 +89,18 @@ describe('world & scenario initialization', () => {
     expect(world.motes).toEqual([]);
     expect(world.shades).toEqual([]);
   });
+
+  it('avoids duplicate IDs when scenario mixes explicit and omitted IDs', () => {
+    const world = createWorld(1, {
+      random_motes: false,
+      random_shades: false,
+      motes: [[0, 0, 5], { id: 'M1', pos: [0, 0, 7] }, [0, 0, 9]],
+      shades: [{ pos: [10, 0, 0] }, { id: 'S1', pos: [12, 0, 0] }]
+    });
+
+    expect(new Set(world.motes.map((m) => m.id)).size).toBe(3);
+    expect(world.motes.map((m) => m.id)).toEqual(['M2', 'M1', 'M3']);
+    expect(new Set(world.shades.map((s) => s.id)).size).toBe(2);
+    expect(world.shades.map((s) => s.id)).toEqual(['S2', 'S1']);
+  });
 });

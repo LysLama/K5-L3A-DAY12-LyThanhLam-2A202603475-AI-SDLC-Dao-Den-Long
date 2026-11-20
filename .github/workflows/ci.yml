@@ -17,12 +17,6 @@ jobs:
           cache: "npm"
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run build
       - run: npm test
-      - run: |
-          if [ -f scripts/build-headless.mjs ] && [ -f index.html ]; then
-            npm run build
-          fi
-      - run: |
-          if [ -f scripts/verify-all.mjs ]; then
-            npm run verify
-          fi
+      - run: npm run verify
