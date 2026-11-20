@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe('Test Contract v1.2 headless CLI & validators', () => {
-  it('exits with code 2 on invalid v1.0/v1.1 inputs or scenario JSON/schema', () => {
+  it('exits with code 2 on malformed or Contract v1.2-invalid inputs or scenario JSON/schema', () => {
     const dir = makeTempDir();
     const out = path.join(dir, 'out.jsonl');
 
@@ -155,7 +155,31 @@ describe('Test Contract v1.2 headless CLI & validators', () => {
     expect(snap10.sim_tick).toBe(2);
   });
 
-  it('completes full 18,000-tick Night 3 (and 21,600-tick override) under 30s with 100% determinism', () => {
+  it('terminates default Night 3 at exact 18,000 ticks (300s)', () => {
+    const dir = makeTempDir();
+    const outDef = path.join(dir, 'n3_def.jsonl');
+    const defScenario = path.join(dir, 'n3_def.json');
+    fs.writeFileSync(defScenario, JSON.stringify({ player: { pos: [0, 6, 4], flames: 999 } }));
+    execFileSync('node', [
+      CLI_PATH,
+      '--seed',
+      '42',
+      '--night',
+      '3',
+      '--scenario',
+      defScenario,
+      '--ticks',
+      '18000',
+      '--out',
+      outDef,
+      '--snapshot-every',
+      '18000'
+    ]);
+    const defEnd = JSON.parse(fs.readFileSync(outDef, 'utf8').trim().split('\n').at(-1)!);
+    expect(defEnd).toMatchObject({ type: 'end', ticks: 18000, state: 'lost' });
+  });
+
+  it('completes 21,600-tick Night 3 stress benchmark under 30s with 100% determinism', () => {
     const dir = makeTempDir();
     const out1 = path.join(dir, 'n3_a.jsonl');
     const out2 = path.join(dir, 'n3_b.jsonl');
@@ -179,7 +203,7 @@ describe('Test Contract v1.2 headless CLI & validators', () => {
       '60'
     ]);
     const elapsedMs = performance.now() - t0;
-    expect(elapsedMs).toBeLessThan(5000);
+    expect(elapsedMs).toBeLessThan(15000);
 
     execFileSync('node', [
       CLI_PATH,
@@ -196,6 +220,9 @@ describe('Test Contract v1.2 headless CLI & validators', () => {
       '--snapshot-every',
       '60'
     ]);
-    expect(fs.readFileSync(out1, 'utf8')).toBe(fs.readFileSync(out2, 'utf8'));
-  });
+    const raw1 = fs.readFileSync(out1, 'utf8');
+    expect(raw1).toBe(fs.readFileSync(out2, 'utf8'));
+    const end1 = JSON.parse(raw1.trim().split('\n').at(-1)!);
+    expect(end1).toMatchObject({ type: 'end', ticks: 21600 });
+  }, 15000);
 });

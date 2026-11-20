@@ -144,6 +144,7 @@ export function createWorld(
         if (override.fuel !== undefined && override.fuel <= 0) {
           target.lit = false;
           target.fuelTicks = 0;
+          target.deposited = 0;
         }
       } else {
         target.fuelTicks = 0;

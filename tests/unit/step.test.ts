@@ -16,7 +16,7 @@ function neutralInput(overrides: Partial<InputState> = {}): InputState {
   };
 }
 
-describe('stepTick Phase 2 Contract v1.1 rules', () => {
+describe('stepTick Contract v1.2 rules (movement, fuel, drain, dawn_survived)', () => {
   it('accelerates/stops within <= 0.1s (6 ticks) and normalizes cam_yaw_deg movement', () => {
     const w = createWorld(1, { random_motes: false, random_shades: false, motes: [] }, 1);
     for (let i = 0; i < 6; i++) {

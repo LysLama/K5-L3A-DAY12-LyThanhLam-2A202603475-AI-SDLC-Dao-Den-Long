@@ -59,7 +59,7 @@ const cli = path.resolve('dist-headless/cli.mjs');
 console.log('3/6 Running Phase 1 regression scenarios under v1.2 rules...');
 const p1Dir = path.resolve('docs/proof/phase1-scenarios');
 
-// P1-A: Win all lit (pickup, pulse, deposit, lantern_lit, all_lit)
+// P1-A: Win at dawn (pickup, pulse, deposit, lantern_lit, dawn_survived)
 const winLines = runHeadless(cli, {
   seed: 101,
   night: 1,

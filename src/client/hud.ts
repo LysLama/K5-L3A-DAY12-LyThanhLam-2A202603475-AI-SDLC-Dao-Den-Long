@@ -524,7 +524,7 @@ export class HudController {
             ? `E — ${actionLabel} (${bestReceivable.deposited}/${req}) · ${bestReceivable.id}`
             : `${bestReceivable.id} (${bestReceivable.deposited}/${req}) — Thu thập thêm đom đóm`;
       } else {
-        const pct = Math.round((bestReceivable.fuelTicks / FUEL_MAX_TICKS) * 100);
+        const pct = Math.min(99, Math.round((bestReceivable.fuelTicks / FUEL_MAX_TICKS) * 100));
         this.promptEl.textContent =
           state.player.carried > 0
             ? `E — Châm dầu ${bestReceivable.id} (${pct}%)`

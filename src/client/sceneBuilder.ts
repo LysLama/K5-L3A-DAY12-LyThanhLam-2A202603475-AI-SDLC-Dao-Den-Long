@@ -31,6 +31,8 @@ interface ShadeVisual {
   eyeMat: THREE.MeshBasicMaterial;
   wisps: THREE.Mesh[];
   stunStarsGroup: THREE.Group;
+  drainBeam: THREE.Mesh;
+  drainBeamMat: THREE.MeshBasicMaterial;
 }
 
 interface DrifterVisual {
@@ -863,21 +865,21 @@ export class IslandScene {
     core.position.y = 0.41;
     paperHeadGroup.add(core);
 
-    // Visible torn-paper slashes shown when lantern is unlit (colorblind/grayscale shape cue)
+    // Visible torn-paper slashes proud of all 4 octahedron faces when unlit
     const tearGroup = new THREE.Group();
     tearGroup.position.y = 0.41;
-    const tearMat = new THREE.MeshBasicMaterial({ color: '#111420' });
-    const slashGeo = new THREE.BoxGeometry(0.46, 0.065, 0.05);
+    const tearMat = new THREE.MeshBasicMaterial({ color: '#0f1320' });
+    const slashGeo = new THREE.BoxGeometry(0.56, 0.075, 0.06);
     for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2;
+      const a = ((i + 0.5) / 4) * Math.PI * 2;
       const slashA = new THREE.Mesh(slashGeo, tearMat);
-      slashA.position.set(Math.cos(a) * 0.34, 0.05, Math.sin(a) * 0.34);
+      slashA.position.set(Math.cos(a) * 0.41, 0.06, Math.sin(a) * 0.41);
       slashA.rotation.y = -a + Math.PI / 2;
-      slashA.rotation.z = 0.42;
+      slashA.rotation.z = 0.44;
       const slashB = new THREE.Mesh(slashGeo, tearMat);
-      slashB.position.set(Math.cos(a) * 0.34, -0.08, Math.sin(a) * 0.34);
+      slashB.position.set(Math.cos(a) * 0.41, -0.09, Math.sin(a) * 0.41);
       slashB.rotation.y = -a + Math.PI / 2;
-      slashB.rotation.z = -0.35;
+      slashB.rotation.z = -0.38;
       tearGroup.add(slashA, slashB);
     }
     paperHeadGroup.add(tearGroup);
@@ -1187,7 +1189,26 @@ export class IslandScene {
     stunStarsGroup.visible = false;
     group.add(stunStarsGroup);
 
-    const visual: ShadeVisual = { group, bodyMat, eyeMat, wisps, stunStarsGroup };
+    const beamGeo = new THREE.CylinderGeometry(0.055, 0.13, 1, 8);
+    beamGeo.rotateX(Math.PI / 2);
+    const drainBeamMat = new THREE.MeshBasicMaterial({
+      color: PALETTE.shadeEye,
+      transparent: true,
+      opacity: 0.72
+    });
+    const drainBeam = new THREE.Mesh(beamGeo, drainBeamMat);
+    drainBeam.visible = false;
+    this.scene.add(drainBeam);
+
+    const visual: ShadeVisual = {
+      group,
+      bodyMat,
+      eyeMat,
+      wisps,
+      stunStarsGroup,
+      drainBeam,
+      drainBeamMat
+    };
     this.shadeVisuals.set(id, visual);
     this.scene.add(group);
     return visual;
@@ -1310,7 +1331,11 @@ export class IslandScene {
     this.mayLanternPivot.rotation.x = -0.14 * this.moveBlend + Math.cos(elapsedSec * 3.1) * 0.04;
     this.mayLanternLight.intensity = 3.0 + Math.sin(elapsedSec * 8) * 0.25;
     this.mayBodyMat.emissive.setHex(
-      p.invulnTicks > 0 && Math.floor(elapsedSec * 14) % 2 === 0 ? PALETTE.danger : 0x000000
+      p.invulnTicks > 0 && Math.floor(elapsedSec * 14) % 2 === 0
+        ? colorblind
+          ? PALETTE.dangerCb
+          : PALETTE.danger
+        : 0x000000
     );
 
     if (p.charmTicks > 0) {
@@ -1494,6 +1519,27 @@ export class IslandScene {
 
       const activeEyeHex = colorblind ? PALETTE.shadeEyeCb : PALETTE.shadeEye;
       const activeEmissiveHex = colorblind ? '#004870' : '#2b0d4d';
+      if (s.state === 'drain' && drainTarget) {
+        const sx = renderShadePos[0];
+        const sy = renderShadePos[1] + 0.95 + hover;
+        const sz = renderShadePos[2];
+        const tx = drainTarget.pos[0];
+        const ty = drainTarget.pos[1] + 3.25;
+        const tz = drainTarget.pos[2];
+        const dist = Math.hypot(tx - sx, ty - sy, tz - sz);
+        vis.drainBeam.visible = dist > 0.05;
+        if (vis.drainBeam.visible) {
+          vis.drainBeam.position.set((sx + tx) * 0.5, (sy + ty) * 0.5, (sz + tz) * 0.5);
+          vis.drainBeam.lookAt(tx, ty, tz);
+          const pulse = 1 + Math.sin(elapsedSec * 14) * 0.22;
+          vis.drainBeam.scale.set(pulse, pulse, dist);
+          vis.drainBeamMat.color.setHex(activeEyeHex);
+          vis.drainBeamMat.opacity = 0.48 + 0.28 * Math.sin(elapsedSec * 12);
+        }
+      } else {
+        vis.drainBeam.visible = false;
+      }
+
       if (s.state === 'stunned') {
         vis.bodyMat.color.setHex(PALETTE.shadeStun);
         vis.bodyMat.emissive.set('#4c3c18');
@@ -1515,6 +1561,9 @@ export class IslandScene {
     for (const [id, vis] of this.shadeVisuals.entries()) {
       if (!activeShadeIds.has(id)) {
         this.scene.remove(vis.group);
+        this.disposeObjectResources(vis.group);
+        this.scene.remove(vis.drainBeam);
+        this.disposeObjectResources(vis.drainBeam);
         this.shadeVisuals.delete(id);
       }
     }
@@ -1597,6 +1646,18 @@ export class IslandScene {
             1.25
           );
         }
+      } else if (ev.name === 'fuel_drain') {
+        const target = state.lanterns.find((l) => l.id === ev.data.lantern_id);
+        if (target) {
+          this.vfx.spawnBurst(
+            [target.pos[0], target.pos[1] + 2.9, target.pos[2]],
+            colorblind ? PALETTE.shadeEyeCb : PALETTE.shadeEye,
+            10,
+            2.6,
+            1.4,
+            0.9
+          );
+        }
       } else if (ev.name === 'pulse') {
         this.vfx.spawnPulseEffect(renderPlayerPos);
       } else if (ev.name === 'drifter_steal') {
@@ -1608,7 +1669,11 @@ export class IslandScene {
       } else if (ev.name === 'player_hit') {
         this.vfx.spawnBurst(
           renderPlayerPos,
-          ev.data.by === 'fall' ? PALETTE.drifterSteel : PALETTE.shadeEye,
+          ev.data.by === 'fall'
+            ? PALETTE.drifterSteel
+            : colorblind
+              ? PALETTE.shadeEyeCb
+              : PALETTE.shadeEye,
           16,
           4.5,
           2.5,

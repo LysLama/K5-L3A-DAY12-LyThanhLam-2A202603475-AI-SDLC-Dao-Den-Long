@@ -82,4 +82,20 @@ describe('world & scenario initialization (Contract v1.2)', () => {
     expect(snap.lanterns[2]).toMatchObject({ id: 'L3', lit: false, fuel: 0, ever_lit: true });
     expect(allocateNextId(custom, 'S')).toBe('S6');
   });
+
+  it('resets deposited=0 when scenario specifies { lit: true, fuel: 0 } so relight remains valid', () => {
+    const w = createWorld(
+      11,
+      {
+        random_motes: false,
+        random_shades: false,
+        lanterns: [{ id: 'L1', lit: true, fuel: 0 }]
+      },
+      1
+    );
+    expect(w.lanterns[0].lit).toBe(false);
+    expect(w.lanterns[0].everLit).toBe(true);
+    expect(w.lanterns[0].fuelTicks).toBe(0);
+    expect(w.lanterns[0].deposited).toBe(0);
+  });
 });

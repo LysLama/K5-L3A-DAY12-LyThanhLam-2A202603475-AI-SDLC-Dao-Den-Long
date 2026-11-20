@@ -3,14 +3,14 @@
 ## 1. Tóm tắt Kết quả Tổng hợp (`npm run build && npm run verify`)
 
 - **Typecheck & Production Build:** `tsc --noEmit` + `vite build` (`dist/index.html` `8.17 kB`, `dist/assets/*.css` `9.32 kB`, `dist/assets/*.js` `699.26 kB`) + `node scripts/build-headless.mjs` (`dist-headless/cli.mjs`) — **PASS (0 errors)**.
-- **Unit & Contract Test Suite (`vitest run`):** **7 test files / 27 tests PASS**:
+- **Unit & Contract Test Suite (`vitest run`):** **7 test files / 29 tests PASS**:
   - `tests/smoke.test.ts` (1 test)
   - `tests/unit/maps.test.ts` (3 tests: Đêm 1/2/3 geometry, thời lượng `240/270/300s`, cầu tre, bục nhảy, dốc, Tháp chuông)
   - `tests/unit/renderSmoothing.test.ts` (2 tests)
-  - `tests/unit/world.test.ts` (3 tests: Contract `v1.2`, khởi tạo `fuelTicks`, `capacity`, scenario `fuel` / `ever_lit` / `drain`)
+  - `tests/unit/world.test.ts` (4 tests: Contract `v1.2`, khởi tạo `fuelTicks`, `capacity`, scenario `fuel` / `ever_lit` / `drain`, reset `deposited=0` khi scenario đặt `{ lit: true, fuel: 0 }`)
   - `tests/unit/step.test.ts` (12 tests: hao hụt dầu nguyên `1/60`, tắt đèn `lantern_out`, thắp lại `5` đom đóm `+40`, châm dầu `used = min(carried, ceil((100-fuel)/10))`, bỏ qua đèn đầy `100`, mất vùng an toàn `< 30` và giữ đúng ở `= 30`, Bóng Mực `wander -> drain` hút `5/s` & `fuel_drain` mỗi `60` tick, `+15` điểm Tỏa Sáng, đẩy mép `6 m` khi châm từ `< 30 -> >= 30`, sức chứa `10 -> 20`, ưu tiên `no_flames` trên tick cuối, thắng `dawn_survived` theo `ceil(0.6 * total)`)
   - `tests/unit/clientInput.test.ts` (2 tests)
-  - `tests/contract/headless.test.ts` (4 tests: từ chối input/scenario sai v1.2 exit code `2`, `--night 1|2|3` và exit `1` trên `--night 4`, Đêm 3 mặc định `18,000` ticks & stress `21,600` ticks dưới `30s` tất định 100%)
+  - `tests/contract/headless.test.ts` (5 tests: từ chối input/scenario sai v1.2 exit code `2`, `--night 1|2|3` và exit `1` trên `--night 4`, Đêm 3 mặc định dừng đúng `18,000` ticks (`300s`), stress `21,600` ticks dưới `30s` tất định 100%)
 - **Code Slop / UI Quality Check (`impeccable detect --json`):** `[]` (0 cảnh báo).
 
 ---
@@ -33,14 +33,14 @@
 | **`shade-drain-pulse` (Phase 3)** | 1 | Bóng `S2` đang `drain` trúng Tỏa Sáng (`+15` điểm), `S1` tự tìm `L2` yếu -> `drain` phát `fuel_drain@t76`, châm `L2 >= 30` đẩy `S1` ra `6.00m` | **PASS** (`drainStunScore=15, fuel_drain@t76, safePushDist=6.00m`) |
 | **`dawn-survived-threshold` (Phase 3)** | 1 | Đêm 1 giữ đúng `3/5` (`ceil(0.6*5)=3`) đến bình minh -> `dawn_survived`, điểm `3*(50+79) + 3*50 = 537` | **PASS** (`reason=dawn_survived, score=537`) |
 | **`capacity-scaling` (Phase 3)** | 1 | Sau khi tự thắp 1 đèn, `capacity` tăng `10 -> 12`, nhặt tối đa `12/13` đom đóm còn lại `1` | **PASS** (`capacity=12, carried=12, leftoverMotes=1`) |
-| Determinism & Benchmark `21,600` ticks | 1, 2, 3 | Hai lần chạy `--seed 42 --night 1|2|3` giống nhau 100%; `21,600` tick Đêm 3 CLI hoàn tất ≤ 30s | **PASS (`21600 ticks` in `2393ms <= 30000ms`)** |
+| Determinism & Benchmark `21,600` ticks | 1, 2, 3 | Hai lần chạy `--seed 42 --night 1|2|3` giống nhau 100%; `21,600` tick Đêm 3 CLI hoàn tất ≤ 30s | **PASS (`21600 ticks` in `2369ms <= 30000ms`)** |
 
 ---
 
 ## 3. Kiểm thử Trực tiếp trên Trình duyệt (`1280×720`, Vite Preview `http://127.0.0.1:4173/`)
 
-Kiểm tra tương tác thực tế qua subagent trình duyệt tại viewport `1280×720`:
-- **Lỗi Console / Page Errors:** **0 lỗi** trong suốt quá trình chuyển qua Menu chính, Đêm 1, Pause/Settings, tải lại trang, Menu Settings và Đêm 3.
+Kiểm tra tương tác thực tế qua subagent trình duyệt tại viewport `1280×720` trên bản build cuối (`dist/assets/index-C8DoLrWR.js`):
+- **Lỗi Console / Page Errors:** **0 lỗi** trong suốt quá trình chuyển qua Menu chính, Cài đặt (bật/tắt mù màu & tải lại trang), Đêm 1, Pause/Về menu và Đêm 3.
 - **Menu chính & Luật Phase 3:** Hiển thị rõ 3 thẻ Đêm `04:00 (Giữ ≥ 3/5)`, `04:30 (Giữ ≥ 4/6)`, `05:00 (Giữ ≥ 5/7)` không đè chữ hay tràn khung.
 - **Chế độ Mù màu (`Bảng màu dễ phân biệt`) & Lưu `localStorage`:** Bật `#input-colorblind` gán lớp `.is-colorblind` lên `<body>`; sau `page.reload()`, trạng thái bật và `.is-colorblind` vẫn được giữ nguyên.
-- **Độ mượt trên Đêm 3 (`≥ 30 FPS`):** Ảnh chụp xác nhận của host (`final_step_18.png` trong vùng Pause Đêm 3) ghi nhận trực tiếp hiển thị `#pause-sub`: **"Đêm 3 · Đảo Chuông (39 FPS) vẫn lặng lẽ đợi ánh lửa từ bạn."** (**39 FPS ≥ 30 FPS**).
+- **Độ mượt trên Đêm 3 (`≥ 30 FPS`):** Ảnh chụp xác nhận của host (`final_step_14.png` trong vùng Pause Đêm 3) ghi nhận trực tiếp hiển thị `#pause-sub`: **"Đêm 3 · Đảo Chuông (41 FPS) vẫn lặng lẽ đợi ánh lửa từ bạn."** (**41 FPS ≥ 30 FPS**).
