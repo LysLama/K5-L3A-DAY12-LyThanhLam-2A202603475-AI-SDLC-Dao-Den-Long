@@ -1439,6 +1439,7 @@ export class IslandScene {
     for (const [id, vis] of this.drifterVisuals.entries()) {
       if (!activeDrifterIds.has(id)) {
         this.scene.remove(vis.group);
+        this.disposeObjectResources(vis.group);
         this.drifterVisuals.delete(id);
       }
     }
@@ -1507,15 +1508,8 @@ export class IslandScene {
     return renderPlayerPos;
   }
 
-  dispose(): void {
-    this.vfx.dispose();
-    for (const tex of this.disposableTextures) {
-      tex.dispose();
-    }
-    this.moteCoreGeo.dispose();
-    this.moteRandomMat.dispose();
-    this.moteDroppedMat.dispose();
-    this.scene.traverse((obj) => {
+  private disposeObjectResources(root: THREE.Object3D): void {
+    root.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (mesh.geometry) mesh.geometry.dispose();
       const mat = mesh.material;
@@ -1525,5 +1519,16 @@ export class IslandScene {
         mat.dispose();
       }
     });
+  }
+
+  dispose(): void {
+    this.vfx.dispose();
+    for (const tex of this.disposableTextures) {
+      tex.dispose();
+    }
+    this.moteCoreGeo.dispose();
+    this.moteRandomMat.dispose();
+    this.moteDroppedMat.dispose();
+    this.disposeObjectResources(this.scene);
   }
 }

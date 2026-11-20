@@ -170,6 +170,7 @@ class GameApp {
 
     this.onKeyDown = (e: KeyboardEvent) => {
       this.audio.unlock();
+      if (e.repeat && ['KeyP', 'Escape', 'KeyM', 'KeyH', 'Enter'].includes(e.code)) return;
       if (e.code === 'KeyP' || e.code === 'Escape') {
         if (this.screen === 'playing' || this.screen === 'paused') {
           this.togglePause();
@@ -323,7 +324,21 @@ class GameApp {
       this.pressedKeys.clear();
       this.hud.showScreen('paused', this.currentNight, this.fpsAvg);
     } else if (this.state.status === 'paused') {
-      stepTick(this.state, mapKeysToInput(new Set(), this.camRig.yawDeg, false, true));
+      this.prevPlayerPos = [...this.state.player.pos];
+      this.snapshotPrevActors();
+      const resumeEvs1 = stepTick(this.state, mapKeysToInput(new Set(), this.camRig.yawDeg, false, true));
+      let resumeEvs2: SimEvent[] = [];
+      if ((this.state.status as SimState['status']) === 'playing') {
+        this.prevPlayerPos = [...this.state.player.pos];
+        this.snapshotPrevActors();
+        resumeEvs2 = stepTick(this.state, mapKeysToInput(new Set(), this.camRig.yawDeg, false, false));
+      }
+      const combined = resumeEvs1.concat(resumeEvs2);
+      if (combined.length > 0) {
+        this.audio.handleEvents(combined);
+        this.hud.handleEvents(combined, this.state);
+      }
+      this.accumulator = 0;
       this.screen = 'playing';
       this.lastTimestamp = performance.now();
       this.hud.showScreen('playing', this.currentNight, this.fpsAvg);
@@ -376,6 +391,7 @@ class GameApp {
           ];
           this.snapshotPrevActors();
           const wasGrounded = this.state.player.grounded;
+          const prevWaitTicks = this.state.player.fallWaitTicks;
 
           const input = mapKeysToInput(
             this.pressedKeys,
@@ -388,6 +404,9 @@ class GameApp {
 
           if (wasGrounded && !this.state.player.grounded && this.state.player.vel[1] > 2) {
             this.audio.playJump();
+          }
+          if (prevWaitTicks > 0 && this.state.player.fallWaitTicks === 0) {
+            this.prevPlayerPos = [...this.state.player.pos];
           }
           if (evs.length > 0) {
             tickEvents = tickEvents.concat(evs);

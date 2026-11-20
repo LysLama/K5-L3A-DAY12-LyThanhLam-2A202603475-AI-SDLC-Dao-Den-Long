@@ -74,7 +74,7 @@ Các yếu tố sáng tạo tiếp tục được cô lập 100% trong [`src/cli
 1. **Chuỗi truyện Ông Đăng & Trải nghiệm 3 Đêm ([`src/client/hud.ts`](src/client/hud.ts)):** Màn hình Intro từng Đêm với lời dẫn của Ông Đăng, cảnh báo Gió mạnh kèm chuông báo, thanh năng lượng 10 ô, mũi tên chỉ đèn lồng ngoài khung hình và màn hình Bình Minh tổng kết điểm chiến dịch.
 2. **Âm thanh Web Audio (`Soundscape`) & Cảnh quan 3D ([`src/client/audio.ts`](src/client/audio.ts), [`src/client/sceneBuilder.ts`](src/client/sceneBuilder.ts)):** Nhạc nền pentatonic êm dịu cùng hơn 14 hiệu ứng (`dash`, `charm_picked`, `drifter_steal`, `drifter_drop`, `shade_spawned`, cảnh báo gió, đếm ngược 10 giây cuối), hàng cây cau trên Đảo Cau, quả chuông đồng trên Tháp Chuông Đảo Chuông rung theo cơn gió và vệt lá gió `VfxManager`.
 
-**Bằng chứng phần lõi không đổi:** `npm run verify` chạy độc lập trên [`dist-headless/cli.mjs`](dist-headless/cli.mjs), xác minh **23/23** unit & contract test pass, toàn bộ kịch bản Phase 1 & Phase 2 pass chuẩn `v1.1`, kiểm tra tất định 100% trên cả 3 Đêm và benchmark `21,600` tick Đêm 3 đạt `382 ms` (`<= 30,000 ms`).
+**Bằng chứng phần lõi không đổi:** `npm run verify` chạy độc lập trên [`dist-headless/cli.mjs`](dist-headless/cli.mjs), xác minh **24/24** unit & contract test pass, toàn bộ kịch bản Phase 1 & Phase 2 pass chuẩn `v1.1`, kiểm tra tất định 100% trên cả 3 Đêm và benchmark đủ `21,600` tick Đêm 3 đạt `433 ms` (`<= 30,000 ms`).
 
 ---
 

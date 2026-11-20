@@ -257,12 +257,30 @@ try {
     const raw2 = fs.readFileSync(det2, 'utf8');
     assert(raw1 === raw2, `Determinism failed for Night ${night}`);
   }
+  const benchScenario = path.join(tmpDir, 'bench.scenario.json');
+  fs.writeFileSync(
+    benchScenario,
+    JSON.stringify({ player: { pos: [0, 6, 4], flames: 999 }, wind_enabled: true })
+  );
   const benchOut = path.join(tmpDir, 'bench21600.jsonl');
   const t0 = Date.now();
-  runCommand('node', [cli, '--seed', '77', '--night', '3', '--ticks', '21600', '--out', benchOut]);
+  const benchLines = runHeadless(cli, {
+    seed: 77,
+    night: 3,
+    scenario: benchScenario,
+    ticks: 21600,
+    out: benchOut
+  });
   const elapsedMs = Date.now() - t0;
+  const benchEnd = benchLines.at(-1);
+  assert(
+    benchEnd?.type === 'end' && benchEnd.ticks === 21600,
+    `21,600-tick benchmark terminated early: ${JSON.stringify(benchEnd)}`
+  );
   assert(elapsedMs <= 30000, `21,600-tick benchmark exceeded 30s: ${elapsedMs}ms`);
-  console.log(`  - Night 1-3 determinism + Night 3 21,600-tick CLI benchmark: PASS (${elapsedMs}ms <= 30000ms)`);
+  console.log(
+    `  - Night 1-3 determinism + Night 3 21,600-tick CLI benchmark: PASS (${benchEnd.ticks} ticks in ${elapsedMs}ms <= 30000ms)`
+  );
 } finally {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }

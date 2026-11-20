@@ -218,4 +218,31 @@ describe('stepTick Phase 2 Contract v1.1 rules', () => {
     const distPushed = Math.hypot(w.player.pos[0] - posAtStart[0], w.player.pos[2] - posAtStart[2]);
     expect(distPushed).toBeCloseTo(2.0, 2);
   });
+
+  it('tracks player altitude when drifter chases on Night 3 Tier 2 so Pulse can hit it', () => {
+    const w = createWorld(1, {
+      random_motes: false,
+      random_shades: false,
+      random_drifters: false,
+      wind_enabled: false,
+      motes: [],
+      player: { pos: [0, 6, 4], carried: 6, flames: 3 },
+      drifters: [{ id: 'D1', pos: [0, 1.5, 4.5], state: 'chase' }]
+    }, 3);
+
+    // Tick 1: drifter is 5.3m below Mây+0.8 on Y=6 -> must ascend smoothly before stealing from beneath floor!
+    let stolenTick = -1;
+    for (let i = 0; i < 90; i++) {
+      const evs = stepTick(w, neutralInput());
+      if (evs.some((e) => e.name === 'drifter_steal')) {
+        stolenTick = i + 1;
+        break;
+      }
+    }
+    expect(stolenTick).toBeGreaterThan(1);
+    expect(w.drifters[0].pos[1]).toBeGreaterThanOrEqual(4.8);
+    // Immediate Pulse hits the fleeing drifter in 3D radius 5m!
+    const pulseEvs = stepTick(w, neutralInput({ pulse: true }));
+    expect(pulseEvs.some((e) => e.name === 'drifter_drop' && e.data.amount === 3)).toBe(true);
+  });
 });

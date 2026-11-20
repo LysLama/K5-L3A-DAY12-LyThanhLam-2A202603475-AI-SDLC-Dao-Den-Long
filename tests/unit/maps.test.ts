@@ -59,8 +59,12 @@ describe('Phase 2 maps & terrain geometry', () => {
     expect(isInBellTower(3, 1.5, 6, 0)).toBe(true);
     expect(isInBellTower(3, 2.1, 6, 0)).toBe(false);
 
-    // Cliff wall prevents walking horizontally from Tier 0 (y=0) straight through Tier 2 (r<8)
+    // Cliff wall prevents walking or phasing horizontally through Tier 2 (y < 5.85) & Tier 1 (y < 2.85)
     const blocked = resolveMovementObstacles(3, 8.2, 0, 7.8, 0, 0);
     expect(Math.hypot(blocked[0], blocked[1])).toBeGreaterThanOrEqual(8.0);
+    const airBlockedTier2 = resolveMovementObstacles(3, 8.2, 0, 7.8, 0, 5.75);
+    expect(Math.hypot(airBlockedTier2[0], airBlockedTier2[1])).toBeGreaterThanOrEqual(8.0);
+    const airBlockedTier1 = resolveMovementObstacles(3, 0, 24.2, 0, 23.8, 2.75);
+    expect(Math.hypot(airBlockedTier1[0], airBlockedTier1[1])).toBeGreaterThanOrEqual(24.0);
   });
 });

@@ -3,12 +3,12 @@
 ## 1. Tóm tắt Kết quả Tổng hợp (`npm run build && npm run verify`)
 
 - **Typecheck & Production Build:** `tsc --noEmit` + `vite build` (`dist/index.html`, `dist/assets/*.js`, `dist/assets/*.css`) + `node scripts/build-headless.mjs` (`dist-headless/cli.mjs`) — **PASS (0 errors)**.
-- **Unit & Contract Test Suite (`vitest run`):** **7 test files / 23 tests PASS**:
+- **Unit & Contract Test Suite (`vitest run`):** **7 test files / 24 tests PASS**:
   - `tests/smoke.test.ts` (1 test)
   - `tests/unit/maps.test.ts` (3 tests: Đêm 1/2/3 geometry, cầu tre, bục nhảy, dốc `30°/150°`, vách đứng, Tháp chuông)
   - `tests/unit/renderSmoothing.test.ts` (2 tests: nội suy chuyển động & xoay góc)
   - `tests/unit/world.test.ts` (3 tests: khởi tạo chuẩn v1.1, Đêm 1–3, scenario seed)
-  - `tests/unit/step.test.ts` (8 tests: 12 bước tick, tăng/giảm tốc `≤ 0.1s`, Lướt `14 m/s`, Bùa Gió, Gió Lạc, Đêm 2/3, rơi `-10m` chờ `60` tick, Tỏa Sáng `5m` 3D, điểm chuẩn hóa)
+  - `tests/unit/step.test.ts` (9 tests: 12 bước tick, tăng/giảm tốc `≤ 0.1s`, Lướt `14 m/s`, Bùa Gió, Gió Lạc theo độ cao tầng, Đêm 2/3, rơi `-10m` chờ `60` tick, Tỏa Sáng `5m` 3D, điểm chuẩn hóa)
   - `tests/unit/clientInput.test.ts` (2 tests: `WASD` + `Shift` Lướt + `Q/R/RMB` Tỏa Sáng + `P/Esc` Pause + camera `45°` parity)
   - `tests/contract/headless.test.ts` (4 tests: exit code 1/2, `--night 1|2|3`, 21,600 tick Night 3 `< 30s` & tất định 100%)
 - **Code Slop / UI Quality Check (`impeccable detect --json`):** `[]` (0 cảnh báo).
@@ -29,7 +29,7 @@
 | `night2-bridge-jump` | 2 | Bục nhảy `(20,0,18)` bay sang Đảo B, qua Cầu tre `(x=35)`, thắp đèn cuối thắng | **PASS** (`airJump=true, bridgeWalk=true, endTick=596`) |
 | `night3-tiers-wind` | 3 | Leo dốc `30°` lên Tầng 1 (`Y=3`), bục nhảy `(0,3,13)` lên Tầng 2 (`Y=6`), chặn Tháp chuông `r>=2m`, Gió mạnh tick `1800` | **PASS** (`windActiveTick=1800`) |
 | `pause-resume` | 1 | Sườn lên `pause` đóng băng `sim_tick=10`, mở lại tiếp tục `sim_tick=25` | **PASS** |
-| Determinism & Benchmark 21,600 ticks | 1, 2, 3 | Hai lần chạy `--seed 42 --night 1|2|3` giống nhau 100%; `21,600` tick Đêm 3 CLI ≤ 30s | **PASS (`382 ms` <= `30,000 ms`)** |
+| Determinism & Benchmark 21,600 ticks | 1, 2, 3 | Hai lần chạy `--seed 42 --night 1|2|3` giống nhau 100%; `21,600` tick Đêm 3 CLI đủ 21,600 ticks ≤ 30s | **PASS (`21,600 ticks` in `433 ms` <= `30,000 ms`)** |
 
 ---
 

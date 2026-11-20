@@ -240,14 +240,14 @@ export function resolveMovementObstacles(
   // 2. Tier 2 vertical cliff wall (radius <= 8m, Y = 6m)
   const prevR = Math.hypot(prevX, prevZ);
   const nextR = Math.hypot(x, z);
-  if (y < 5.65 && prevR >= 7.99 && nextR < 8.0) {
+  if (y < 5.85 && prevR >= 7.99 && nextR < 8.0) {
     const s = 8.001 / (nextR || 1);
     x *= s;
     z *= s;
   }
 
   // 3. Tier 1 vertical cliff walls (12 <= r <= 24 && z > 0, Y = 3m), allowing entry via ramps
-  if (y < 2.65 && getRampHeightAt(x, z) === null) {
+  if (y < 2.85 && getRampHeightAt(x, z) === null) {
     const prevInT1 = prevR >= 12.0 && prevR <= 24.0 && prevZ > 0;
     const rAfter = Math.hypot(x, z);
     const nextInT1 = rAfter >= 12.0 && rAfter <= 24.0 && z > 0;

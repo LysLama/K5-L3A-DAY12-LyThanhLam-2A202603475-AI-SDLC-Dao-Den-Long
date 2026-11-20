@@ -25,6 +25,7 @@
 | Phase 2 (UI/HUD) | Top HUD ở Đêm 3 (7 đèn) bị xuống dòng ở `1280px` và cảnh báo `side-tab` từ `impeccable detect` | Kiểm tra `final_step_23.png` + `impeccable.cmd detect --json` | Đổi `.hud-top` thành `flex` dàn ngang 1 hàng (`1240×39px`) và đổi viền `.intro-quote` sang border mảnh đều 4 cạnh (`[]` slop) |
 | Phase 2 (FPS / Telemetry) | Phép tính trung bình `mean(1/dt)` kết hợp DOM `innerHTML` mỗi frame làm số đo FPS nhảy bất ổn khi đổi màn (`17 FPS` -> `109 FPS`) | Kiểm chứng `#pause-sub` trên trình duyệt ở Đêm 2 & Đêm 3 | Thêm cache DOM `setHtmlIfChanged` trong `hud.ts` và tính harmonic mean `N / sum(dt)` trên các frame chơi thực tế |
 | Phase 2 (Scenarios) | Scenario Đêm 3 đi đường thẳng nối `(16.6, 9.5) -> (0, 13)` cắt qua khoảng trống `r < 12` làm rơi xuống sân `Y=0` thay vì vào bục nhảy `(0,3,13)` | Đọc snapshot `out-night3-tiers-wind.jsonl` | Điều hướng theo vòng cung `r ~ 20 m` trên Tầng 1 trước khi rẽ vào bục nhảy `(0, 3, 13)` |
+| Phase 2 (Review) | Kẽ hở va chạm vách đá `0.2m` (`5.65` vs landing `5.85`), `prevPause` chưa nhả ở nhánh Resume trên màn hình tần số quét cao & benchmark 21,600 tick thiếu assert đủ số tick | Independent Branch Reviewer (`main..HEAD`) | Chỉnh ngưỡng vách `2.85 / 5.85` trong `maps.ts`, nhả `prevPause` + chặn `e.repeat` ở `main.ts`, đồng bộ cao độ Gió Lạc, dispose GPU buffer và assert `ticks === 21600` |
 
 ---
 

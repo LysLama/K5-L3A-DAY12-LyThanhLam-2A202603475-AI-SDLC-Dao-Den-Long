@@ -650,6 +650,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
       } else {
         drifter.wanderAngle += 0.025;
         drifter.pos[0] += Math.cos(drifter.wanderAngle) * DRIFTER_IDLE_SPEED * DT;
+        drifter.pos[1] = approach(drifter.pos[1], 1.5, 2.0 * DT);
         drifter.pos[2] += Math.sin(drifter.wanderAngle) * DRIFTER_IDLE_SPEED * DT;
         clampToFog(drifter.pos, state.night);
       }
@@ -666,6 +667,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
         const d = Math.hypot(dx, dz) || 1;
         const step = Math.min(d, DRIFTER_FAST_SPEED * DT);
         drifter.pos[0] += (dx / d) * step;
+        drifter.pos[1] = approach(drifter.pos[1], p.pos[1] + 0.8, 4.5 * DT);
         drifter.pos[2] += (dz / d) * step;
       }
     } else if (drifter.state === 'flee') {
@@ -675,6 +677,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
       const dirX = d > 1e-6 ? dx / d : 1;
       const dirZ = d > 1e-6 ? dz / d : 0;
       drifter.pos[0] += dirX * DRIFTER_FAST_SPEED * DT;
+      drifter.pos[1] = approach(drifter.pos[1], Math.max(1.5, p.pos[1] + 1.2), 2.5 * DT);
       drifter.pos[2] += dirZ * DRIFTER_FAST_SPEED * DT;
       clampToFog(drifter.pos, state.night);
     }
@@ -687,7 +690,8 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
       if (
         drifter.state === 'chase' &&
         !drifter.hasStolen &&
-        distXZ(drifter.pos, p.pos) <= DRIFTER_STEAL_RADIUS
+        distXZ(drifter.pos, p.pos) <= DRIFTER_STEAL_RADIUS &&
+        Math.abs(drifter.pos[1] - (p.pos[1] + 0.8)) <= 2.0
       ) {
         const amount = Math.min(DRIFTER_STEAL_MAX, p.carried);
         p.carried -= amount;
