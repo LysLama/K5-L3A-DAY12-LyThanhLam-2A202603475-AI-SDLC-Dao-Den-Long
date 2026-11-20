@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { FUEL_MAX_TICKS, LOW_FUEL_TICKS, TUNING } from '../sim/constants';
 import { getMapConfig } from '../sim/maps';
 import type { NightId, SimEvent, SimState, Vec3 } from '../sim/types';
+import { AtmosphereManager } from './atmosphere';
 import {
   buildShadeGeometries,
   colorizeGeo,
@@ -14,7 +15,13 @@ import {
 import { computeAmbientIntensity, PALETTE } from './palette';
 import { VfxManager } from './particles';
 import { interpolatePos, unwrapAngleRad } from './renderMath';
+import {
+  buildCoastalAndOffshoreDetails,
+  buildNight3CliffButtresses,
+  buildSculptedIslandMesh
+} from './terrainBuilder';
 import { createBambooBridgeTexture, createGlowTexture, createIslandGroundTexture } from './textures';
+import { populateNightEcosystem, type SwayBatch } from './tropicalAssets';
 
 const MAX_INST_MOTES = 256;
 const MAX_INST_SHADES = 256;
@@ -42,6 +49,8 @@ export interface RenderSyncOptions {
   elapsedSec: number;
   isMovingInput: boolean;
   colorblind?: boolean;
+  reduceMotion?: boolean;
+  benchMode?: boolean;
   cameraPos?: Vec3;
   prevPlayerPos: Vec3;
   prevShadePositions: ReadonlyMap<string, Vec3>;
@@ -55,6 +64,7 @@ export class IslandScene {
   private readonly dirLight: THREE.DirectionalLight;
   private readonly fog: THREE.FogExp2;
   private readonly vfx: VfxManager;
+  private readonly atmosphere: AtmosphereManager;
 
   private readonly disposableTextures: THREE.Texture[] = [];
   private readonly warmGlowTex: THREE.CanvasTexture;
@@ -89,7 +99,7 @@ export class IslandScene {
 
   private cloudInst: THREE.InstancedMesh | null = null;
   private readonly cloudItems: { x: number; baseY: number; z: number; sx: number; sy: number; sz: number; clusterIdx: number }[] = [];
-  private readonly treeCrownInsts: { inst: THREE.InstancedMesh; items: { x: number; y: number; z: number; idx: number }[] }[] = [];
+  private swayBatches: SwayBatch[] = [];
   private readonly jumpPadVisuals: JumpPadVisual[] = [];
   private bellPivot: THREE.Group | null = null;
 
@@ -142,6 +152,7 @@ export class IslandScene {
 
     this.buildEnvironmentForNight(this.night);
     this.buildSkyAndClouds();
+    this.atmosphere = new AtmosphereManager(this.scene, this.night);
 
     const whiteColor = new THREE.Color(0xffffff);
     const makeInst = (geo: THREE.BufferGeometry, mat: THREE.Material, cap: number, withColor: boolean) => {
@@ -381,8 +392,8 @@ export class IslandScene {
       this.buildCircularIslandDisc(0, 40, 1, [0, 0]);
       this.buildPlaza(0, 0, 0);
       this.buildPier(0, 40 - 0.8);
+      this.buildMooredSampan(4.2, -10.35, 45.2);
       this.buildPerimeterStones(0, 0, 40, 22, true);
-      this.buildPineTreesRing(0, 0, 29.5, 10);
     } else if (night === 2) {
       // Twin islands: A at (0,0,0) R=28, B at (70,0,0) R=28
       this.buildCircularIslandDisc(0, 28, 2, [0, 0]);
@@ -392,20 +403,20 @@ export class IslandScene {
       this.buildBambooBridge();
       this.buildPerimeterStones(0, 0, 28, 16, false, [26, 44]);
       this.buildPerimeterStones(70, 0, 28, 16, false, [26, 44]);
-      this.buildArecaPalms(0, 0, 23, 7);
-      this.buildArecaPalms(70, 0, 23, 7);
     } else {
       // Night 3: Đảo Chuông — Tier 0 (R=45, Y=0), Tier 1 (r∈[12..24], z>0, Y=3), Tier 2 (R=8, Y=6), 2 ramps, Bell Tower
       this.buildCircularIslandDisc(0, 45, 3, [0, 28]);
       this.buildPlaza(0, 0, 28, 3.6);
       this.buildNight3Tier1Terrace();
       this.buildNight3Tier2Sanctuary();
+      this.scene.add(buildNight3CliffButtresses());
       this.buildNight3Ramp((30 * Math.PI) / 180);
       this.buildNight3Ramp((150 * Math.PI) / 180);
       this.buildBellTower();
       this.buildPerimeterStones(0, 0, 45, 24, false);
-      this.buildPineTreesRing(0, 0, 38.5, 12);
     }
+
+    this.swayBatches = populateNightEcosystem(this.scene, night);
 
     for (const jp of mapCfg.jumpPads) {
       this.createJumpPadVisual(jp.pos);
@@ -433,14 +444,20 @@ export class IslandScene {
       new THREE.Mesh(mergeParts([baseGeo, skirtGeo]), new THREE.MeshBasicMaterial({ vertexColors: true }))
     );
 
-    const surfaceGeo = new THREE.RingGeometry(0.001, radius, 40, 12);
+    const surfaceGeo = buildSculptedIslandMesh(night, centerX, radius);
     const surfaceMat = new THREE.MeshLambertMaterial({
-      map: tex
+      map: tex,
+      vertexColors: true,
+      emissive: '#071712',
+      emissiveIntensity: 0.6
     });
     const surfaceMesh = new THREE.Mesh(surfaceGeo, surfaceMat);
-    surfaceMesh.rotation.x = -Math.PI / 2;
     surfaceMesh.position.set(centerX, 0.008, 0);
+    surfaceMesh.matrixAutoUpdate = false;
+    surfaceMesh.updateMatrix();
     this.scene.add(surfaceMesh);
+
+    this.scene.add(buildCoastalAndOffshoreDetails(night, centerX, radius));
 
     const rimGeo = new THREE.RingGeometry(radius - 0.45, radius, 48);
     const rimMat = new THREE.MeshBasicMaterial({
@@ -453,6 +470,24 @@ export class IslandScene {
     rim.rotation.x = -Math.PI / 2;
     rim.position.set(centerX, 0.025, 0);
     this.scene.add(rim);
+  }
+
+  private buildMooredSampan(x: number, y: number, z: number): void {
+    const hull = colorizeGeo(
+      new THREE.CylinderGeometry(0.55, 0.35, 3.2, 5).rotateZ(Math.PI / 2).scale(1, 0.45, 0.72),
+      PALETTE.wood
+    );
+    const canopy = colorizeGeo(
+      new THREE.CylinderGeometry(0.46, 0.46, 1.35, 6, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).translate(0, 0.22, 0),
+      PALETTE.sand
+    );
+    const lamp = colorizeGeo(new THREE.SphereGeometry(0.11, 6, 6).translate(1.25, 0.42, 0), PALETTE.lanternCore);
+    const boat = new THREE.Mesh(mergeParts([hull, canopy, lamp]), new THREE.MeshLambertMaterial({ vertexColors: true }));
+    boat.position.set(x, y, z);
+    boat.rotation.y = 0.38;
+    boat.matrixAutoUpdate = false;
+    boat.updateMatrix();
+    this.scene.add(boat);
   }
 
   private buildPlaza(x: number, y: number, z: number, radius = 4.2): void {
@@ -546,8 +581,13 @@ export class IslandScene {
       bevelEnabled: false,
       curveSegments: 42
     });
-    const topMat = new THREE.MeshPhongMaterial({ color: PALETTE.grass, shininess: 6, specular: '#181e2c' });
-    const wallMat = new THREE.MeshLambertMaterial({ color: '#31374f' });
+    const topMat = new THREE.MeshPhongMaterial({
+      color: PALETTE.grass,
+      emissive: '#0a1f18',
+      shininess: 6,
+      specular: '#181e2c'
+    });
+    const wallMat = new THREE.MeshLambertMaterial({ color: '#38405c', emissive: '#101424' });
     const tier1 = new THREE.Mesh(extrudeGeo, [topMat, wallMat]);
     // Rotate +90° around X: local +y -> +Z (z >= 0!), extrude +z [0..3] -> world Y = 3 - z [3..0]
     tier1.rotation.x = Math.PI / 2;
@@ -567,14 +607,19 @@ export class IslandScene {
     // Tier 2 solid plateau: R = 8m, Y = 0..6.0
     const wall = new THREE.Mesh(
       new THREE.CylinderGeometry(8.0, 8.2, 6.0, 40),
-      new THREE.MeshLambertMaterial({ color: '#323850' })
+      new THREE.MeshLambertMaterial({ color: '#38405c', emissive: '#101424' })
     );
     wall.position.y = 3.0;
     this.scene.add(wall);
 
     const cap = new THREE.Mesh(
       new THREE.CircleGeometry(7.98, 40),
-      new THREE.MeshPhongMaterial({ color: PALETTE.grass, shininess: 6, specular: '#181e2c' })
+      new THREE.MeshPhongMaterial({
+        color: PALETTE.grass,
+        emissive: '#0a1f18',
+        shininess: 6,
+        specular: '#181e2c'
+      })
     );
     cap.rotation.x = -Math.PI / 2;
     cap.position.y = 6.01;
@@ -710,100 +755,6 @@ export class IslandScene {
     inst.count = idx;
     inst.instanceMatrix.needsUpdate = true;
     this.scene.add(inst);
-  }
-
-  private buildPineTreesRing(cx: number, cz: number, distBase: number, count: number): void {
-    const trunkGeo = new THREE.CylinderGeometry(0.18, 0.3, 1.8, 7);
-    const trunkMat = new THREE.MeshLambertMaterial({ color: PALETTE.wood });
-    const leafMat = new THREE.MeshLambertMaterial({
-      color: '#22473d',
-      emissive: '#0c1f1a',
-      flatShading: true
-    });
-    const tier1 = new THREE.ConeGeometry(1.45, 2.0, 7);
-    tier1.translate(0, 0.6, 0);
-    const tier2 = new THREE.ConeGeometry(1.05, 1.7, 7);
-    tier2.translate(0, 1.65, 0);
-    const tier3 = new THREE.ConeGeometry(0.65, 1.3, 7);
-    tier3.translate(0, 2.5, 0);
-    const crownGeo = mergeParts([tier1, tier2, tier3]);
-
-    const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
-    const crownInst = new THREE.InstancedMesh(crownGeo, leafMat, count);
-    const items: { x: number; y: number; z: number; idx: number }[] = [];
-
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2 + 0.31;
-      const dist = distBase + (i % 2) * 2.5;
-      const tx = cx + Math.cos(angle) * dist;
-      const tz = cz + Math.sin(angle) * dist;
-      this.tmpDummy.position.set(tx, 0.9, tz);
-      this.tmpDummy.rotation.set(0, 0, 0);
-      this.tmpDummy.scale.set(1, 1, 1);
-      this.tmpDummy.updateMatrix();
-      trunkInst.setMatrixAt(i, this.tmpDummy.matrix);
-
-      this.tmpDummy.position.set(tx, 1.9, tz);
-      this.tmpDummy.updateMatrix();
-      crownInst.setMatrixAt(i, this.tmpDummy.matrix);
-      items.push({ x: tx, y: 1.9, z: tz, idx: i });
-    }
-    trunkInst.instanceMatrix.needsUpdate = true;
-    crownInst.instanceMatrix.needsUpdate = true;
-    this.scene.add(trunkInst, crownInst);
-    this.treeCrownInsts.push({ inst: crownInst, items });
-  }
-
-  private buildArecaPalms(cx: number, cz: number, dist: number, count: number): void {
-    const trunkMat = new THREE.MeshLambertMaterial({ color: '#7d694e' });
-    const frondMat = new THREE.MeshLambertMaterial({
-      color: PALETTE.grass,
-      emissive: '#10261f',
-      flatShading: true
-    });
-    const frondParts: THREE.BufferGeometry[] = [];
-    for (let f = 0; f < 6; f++) {
-      const fa = (f / 6) * Math.PI * 2;
-      const frond = new THREE.ConeGeometry(0.32, 1.95, 4);
-      frond.rotateZ(-Math.PI * 0.34);
-      frond.translate(0.75, 0.15, 0);
-      frond.rotateY(fa);
-      frondParts.push(frond);
-    }
-    const crownGeo = mergeParts(frondParts);
-    const trunkGeo = new THREE.CylinderGeometry(0.12, 0.22, 1.0, 8);
-    const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, count);
-    const crownInst = new THREE.InstancedMesh(crownGeo, frondMat, count);
-    const items: { x: number; y: number; z: number; idx: number }[] = [];
-    let valid = 0;
-
-    for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + 0.45;
-      const px = cx + Math.cos(a) * dist;
-      const pz = cz + Math.sin(a) * dist;
-      if (px > 23 && px < 47 && Math.abs(pz) < 4) continue;
-
-      const h = 4.2 + (i % 3) * 0.55;
-      this.tmpDummy.position.set(px, h / 2, pz);
-      this.tmpDummy.rotation.set(0, 0, ((i % 2) * 2 - 1) * 0.04);
-      this.tmpDummy.scale.set(1, h, 1);
-      this.tmpDummy.updateMatrix();
-      trunkInst.setMatrixAt(valid, this.tmpDummy.matrix);
-
-      this.tmpDummy.position.set(px, h, pz);
-      this.tmpDummy.rotation.set(0, 0, 0);
-      this.tmpDummy.scale.set(1, 1, 1);
-      this.tmpDummy.updateMatrix();
-      crownInst.setMatrixAt(valid, this.tmpDummy.matrix);
-      items.push({ x: px, y: h, z: pz, idx: valid });
-      valid++;
-    }
-    trunkInst.count = valid;
-    crownInst.count = valid;
-    trunkInst.instanceMatrix.needsUpdate = true;
-    crownInst.instanceMatrix.needsUpdate = true;
-    this.scene.add(trunkInst, crownInst);
-    this.treeCrownInsts.push({ inst: crownInst, items });
   }
 
   private buildSkyAndClouds(): void {
@@ -1347,13 +1298,24 @@ export class IslandScene {
     if (haloCount > 0 && this.lanternHaloInst.instanceColor) this.lanternHaloInst.instanceColor.needsUpdate = true;
     if (fuelBarCount > 0 && this.lanternFuelFillInst.instanceColor) this.lanternFuelFillInst.instanceColor.needsUpdate = true;
 
+    const atmRes = this.atmosphere.update({
+      dt: frameDt,
+      elapsedSec,
+      focusPos: renderPlayerPos,
+      windActive: state.wind.active,
+      windWarning: state.wind.warning,
+      windDirDeg: state.wind.dirDeg,
+      reduceMotion: Boolean(opts.reduceMotion),
+      benchMode: Boolean(opts.benchMode)
+    });
+
     const totalLanterns = Math.max(1, state.lanterns.length);
     const warmFactor = litCount / totalLanterns;
     (this.scene.background as THREE.Color).lerpColors(this.darkBg, this.warmBg, warmFactor);
     this.fog.color.lerpColors(this.darkFog, this.warmFog, warmFactor);
     this.fog.density = 0.0095 - warmFactor * 0.0035;
-    this.hemiLight.intensity = computeAmbientIntensity(litCount, totalLanterns);
-    this.dirLight.intensity = 0.55 + warmFactor * 0.4;
+    this.hemiLight.intensity = computeAmbientIntensity(litCount, totalLanterns) + atmRes.lightningBoost;
+    this.dirLight.intensity = 0.55 + warmFactor * 0.4 + atmRes.lightningBoost * 0.9;
 
     // 3. Sync Motes at proper elevation pos[1] via GPU InstancedMesh
     const moteCount = Math.min(state.motes.length, MAX_INST_MOTES);
@@ -1685,11 +1647,16 @@ export class IslandScene {
         }
         this.cloudInst.instanceMatrix.needsUpdate = true;
       }
-      for (const batch of this.treeCrownInsts) {
+      const windMul = state.wind.active ? 2.1 : state.wind.warning ? 1.45 : 1.0;
+      for (const batch of this.swayBatches) {
         for (const item of batch.items) {
           this.tmpDummy.position.set(item.x, item.y, item.z);
-          this.tmpDummy.rotation.set(0, 0, Math.sin(elapsedSec * 1.3 + item.idx) * 0.03);
-          this.tmpDummy.scale.set(1, 1, 1);
+          this.tmpDummy.rotation.set(
+            0,
+            item.yaw,
+            Math.sin(elapsedSec * 1.45 + item.idx * 0.8) * batch.amplitude * windMul
+          );
+          this.tmpDummy.scale.setScalar(item.scale);
           this.tmpDummy.updateMatrix();
           batch.inst.setMatrixAt(item.idx, this.tmpDummy.matrix);
         }
