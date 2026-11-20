@@ -1,0 +1,8 @@
+node_modules
+dist
+dist-app
+dist-headless
+release-dist
+.git
+docs/demo/*.mp4
+docs/proof/*/out-*.jsonl

@@ -832,8 +832,8 @@ export class HudController {
       this.promptEl.classList.add('hidden');
     }
 
-    this.updateOffscreenLanternArrow(state, camera);
-    this.updateOffscreenShadeArrow(state, camera);
+    const lanternPos = this.updateOffscreenLanternArrow(state, camera);
+    this.updateOffscreenShadeArrow(state, camera, lanternPos);
   }
 
   private positionEdgeArrow(
@@ -843,8 +843,9 @@ export class HudController {
     worldPos: readonly [number, number, number],
     yOffset: number,
     label: string,
-    camera: THREE.PerspectiveCamera
-  ): void {
+    camera: THREE.PerspectiveCamera,
+    avoidPos?: { x: number; y: number } | null
+  ): { x: number; y: number } | null {
     this.projVec.set(worldPos[0], worldPos[1] + yOffset, worldPos[2]).project(camera);
     const behind = this.projVec.z > 1;
     const nx = behind ? -this.projVec.x : this.projVec.x;
@@ -853,7 +854,7 @@ export class HudController {
     const inView = !behind && Math.abs(nx) <= 0.88 && Math.abs(ny) <= 0.84;
     if (inView) {
       el.classList.add('hidden');
-      return;
+      return null;
     }
 
     const edgeScale = Math.max(Math.abs(nx) / 0.86, Math.abs(ny) / 0.78, 1e-4);
@@ -861,8 +862,17 @@ export class HudController {
     const ey = ny / edgeScale;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
+    const minY = 92;
+    const maxY = Math.max(minY, vh - 122);
     const px = Math.max(68, Math.min(vw - 68, (ex * 0.5 + 0.5) * vw));
-    const py = Math.max(92, Math.min(vh - 122, (-ey * 0.5 + 0.5) * vh));
+    let py = Math.max(minY, Math.min(maxY, (-ey * 0.5 + 0.5) * vh));
+
+    if (avoidPos && Math.abs(px - avoidPos.x) < 136 && Math.abs(py - avoidPos.y) < 68) {
+      const above = avoidPos.y - 72;
+      const below = avoidPos.y + 72;
+      py = avoidPos.y > vh * 0.5 ? (above >= minY ? above : below) : (below <= maxY ? below : above);
+      py = Math.max(minY, Math.min(maxY, py));
+    }
     const arrowDeg = (Math.atan2(nx, ny) * 180) / Math.PI;
 
     el.classList.remove('hidden');
@@ -870,12 +880,16 @@ export class HudController {
     el.style.top = `${py.toFixed(1)}px`;
     rotatorEl.style.transform = `rotate(${arrowDeg.toFixed(1)}deg)`;
     labelEl.textContent = label;
+    return { x: px, y: py };
   }
 
-  private updateOffscreenLanternArrow(state: SimState, camera: THREE.PerspectiveCamera): void {
+  private updateOffscreenLanternArrow(
+    state: SimState,
+    camera: THREE.PerspectiveCamera
+  ): { x: number; y: number } | null {
     if (state.status !== 'playing') {
       this.arrowEl.classList.add('hidden');
-      return;
+      return null;
     }
 
     let nearest: (typeof state.lanterns)[number] | null = null;
@@ -899,10 +913,10 @@ export class HudController {
 
     if (!nearest) {
       this.arrowEl.classList.add('hidden');
-      return;
+      return null;
     }
     const prefix = nearest.lit && nearest.fuelTicks < LOW_FUEL_TICKS ? '⚠ ' : '';
-    this.positionEdgeArrow(
+    return this.positionEdgeArrow(
       this.arrowEl,
       this.arrowRotatorEl,
       this.arrowLabelEl,
@@ -913,7 +927,11 @@ export class HudController {
     );
   }
 
-  private updateOffscreenShadeArrow(state: SimState, camera: THREE.PerspectiveCamera): void {
+  private updateOffscreenShadeArrow(
+    state: SimState,
+    camera: THREE.PerspectiveCamera,
+    avoidPos: { x: number; y: number } | null
+  ): void {
     if (state.status !== 'playing' || state.shades.length === 0) {
       this.shadeArrowEl.classList.add('hidden');
       return;
@@ -952,7 +970,8 @@ export class HudController {
       targetShade.pos,
       1.2,
       `⚠ Bóng · ${Math.round(targetDist)}m`,
-      camera
+      camera,
+      avoidPos
     );
   }
 }

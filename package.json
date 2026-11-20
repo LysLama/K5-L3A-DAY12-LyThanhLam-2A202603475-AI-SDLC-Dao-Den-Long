@@ -1,6 +1,6 @@
 {
   "name": "dao-den-long",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
     "start": "node dist-app/run.mjs",
     "bench": "node dist-app/bench.mjs",
     "soak": "node dist-app/soak.mjs",
+    "package:release": "node scripts/package-release.mjs",
     "pretest": "npm run build:headless && npm run build:app",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

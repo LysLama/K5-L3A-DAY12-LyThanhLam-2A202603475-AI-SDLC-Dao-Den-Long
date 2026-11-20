@@ -9,6 +9,7 @@ interface RunCliArgs {
   exportLeaderboard?: string;
   leaderboardFile?: string;
   port: number;
+  host: string;
   noOpen: boolean;
   distDir: string;
 }
@@ -17,6 +18,7 @@ function parseRunArgs(argv: string[]): RunCliArgs {
   const defaultDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist');
   const args: RunCliArgs = {
     port: Number.parseInt(process.env.PORT ?? '4173', 10) || 4173,
+    host: process.env.HOST ?? '127.0.0.1',
     noOpen: false,
     distDir: fs.existsSync(defaultDist) ? defaultDist : path.resolve('dist')
   };
@@ -33,6 +35,10 @@ function parseRunArgs(argv: string[]): RunCliArgs {
       const target = argv[++i];
       if (!target) throw new Error('Missing path for --leaderboard-file');
       args.leaderboardFile = target;
+    } else if (flag === '--host') {
+      const target = argv[++i];
+      if (!target) throw new Error('Missing host address for --host');
+      args.host = target;
     } else if (flag === '--port') {
       const raw = argv[++i];
       const portNum = raw !== undefined ? Number.parseInt(raw, 10) : NaN;
@@ -81,7 +87,8 @@ async function main(): Promise<void> {
     const started = await startGameServer({
       distDir: args.distDir,
       leaderboardFile: lbPath,
-      port: args.port
+      port: args.port,
+      host: args.host
     });
     console.log(`Dao Den Long running at ${started.url}`);
     console.log(`Leaderboard disk file: ${lbPath}`);
@@ -91,7 +98,8 @@ async function main(): Promise<void> {
       const fallback = await startGameServer({
         distDir: args.distDir,
         leaderboardFile: lbPath,
-        port: 0
+        port: 0,
+        host: args.host
       });
       console.log(`Dao Den Long running at ${fallback.url}`);
       console.log(`Leaderboard disk file: ${lbPath}`);
