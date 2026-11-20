@@ -13,7 +13,7 @@ describe('Phase 2 maps & terrain geometry', () => {
     expect(n1.moteSpawnPoints).toHaveLength(24);
     expect(n1.shadeSpawnPoints).toHaveLength(12);
     expect(n1.charms).toHaveLength(0);
-    expect(n1.durationS).toBe(300);
+    expect(n1.durationS).toBe(240);
 
     const n2 = getMapConfig(2);
     expect(n2.lanterns).toHaveLength(6);
@@ -22,7 +22,7 @@ describe('Phase 2 maps & terrain geometry', () => {
     expect(n2.shadeSpawnPoints).toHaveLength(16);
     expect(n2.jumpPads).toHaveLength(2);
     expect(n2.charms).toEqual([{ id: 'C1', pos: [35, 0, 0] }]);
-    expect(n2.durationS).toBe(330);
+    expect(n2.durationS).toBe(270);
 
     const n3 = getMapConfig(3);
     expect(n3.lanterns).toHaveLength(7);
@@ -34,7 +34,7 @@ describe('Phase 2 maps & terrain geometry', () => {
       { id: 'C1', pos: [30, 0, 25] },
       { id: 'C2', pos: [-30, 0, 25] }
     ]);
-    expect(n3.durationS).toBe(360);
+    expect(n3.durationS).toBe(300);
   });
 
   it('resolves Night 2 twin islands and bamboo bridge accurately', () => {

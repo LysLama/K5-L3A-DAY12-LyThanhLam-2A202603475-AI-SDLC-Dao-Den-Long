@@ -32,7 +32,7 @@ afterEach(() => {
   }
 });
 
-describe('Test Contract v1.1 headless CLI & validators', () => {
+describe('Test Contract v1.2 headless CLI & validators', () => {
   it('exits with code 2 on invalid v1.0/v1.1 inputs or scenario JSON/schema', () => {
     const dir = makeTempDir();
     const out = path.join(dir, 'out.jsonl');
@@ -53,8 +53,12 @@ describe('Test Contract v1.1 headless CLI & validators', () => {
     fs.writeFileSync(badShadeState, JSON.stringify({ shades: [{ pos: [0, 1, 0], state: 'bogus' }] }));
     expect(runCliExpectFail(['--seed', '1', '--night', '1', '--scenario', badShadeState, '--ticks', '10', '--out', out]).status).toBe(2);
 
+    const badFuel = path.join(dir, 'badFuel.json');
+    fs.writeFileSync(badFuel, JSON.stringify({ lanterns: [{ id: 'L1', lit: true, fuel: 150 }] }));
+    expect(runCliExpectFail(['--seed', '1', '--night', '1', '--scenario', badFuel, '--ticks', '10', '--out', out]).status).toBe(2);
+
     expect(() => parseAndValidateInputs('{"frames":[{"tick":0,"dash":true,"pause":false}]}')).not.toThrow();
-    expect(() => parseAndValidateScenario('{"wind_enabled":true,"random_drifters":false}')).not.toThrow();
+    expect(() => parseAndValidateScenario('{"wind_enabled":true,"random_drifters":false,"lanterns":[{"id":"L1","lit":true,"fuel":50,"ever_lit":true}],"player":{"successful_lights":2}}')).not.toThrow();
   });
 
   it('supports --night 1, 2, 3 and exits with code 1 on --night 4 or missing --out', () => {
@@ -72,7 +76,7 @@ describe('Test Contract v1.1 headless CLI & validators', () => {
     }
   });
 
-  it('passes Phase 1 regression win flow under normalized v1.1 numbers and pauses cleanly', () => {
+  it('runs Contract v1.2 lantern lighting, refuel, dawn_survived win, and pauses cleanly', () => {
     const dir = makeTempDir();
     const scenarioPath = path.join(dir, 'scenario.json');
     const inputsPath = path.join(dir, 'inputs.json');
@@ -88,12 +92,12 @@ describe('Test Contract v1.1 headless CLI & validators', () => {
         shades: [],
         lanterns: [
           { id: 'L1', pos: [0, 0, 4.5], deposited: 9, lit: false },
-          { id: 'L2', lit: true, deposited: 10 },
-          { id: 'L3', lit: true, deposited: 10 },
-          { id: 'L4', lit: true, deposited: 10 },
-          { id: 'L5', lit: true, deposited: 10 }
+          { id: 'L2', lit: true, fuel: 80 },
+          { id: 'L3', lit: true, fuel: 80 },
+          { id: 'L4', lit: true, fuel: 80 },
+          { id: 'L5', lit: true, fuel: 80 }
         ],
-        time_left_s: 100
+        time_left_s: 1.5
       })
     );
     fs.writeFileSync(
@@ -101,8 +105,8 @@ describe('Test Contract v1.1 headless CLI & validators', () => {
       JSON.stringify({
         frames: [
           { tick: 0, move: [0, 1], cam_yaw_deg: 0 },
-          { tick: 35, interact: true },
-          { tick: 36, interact: false }
+          { tick: 45, interact: true, move: [0, 0] },
+          { tick: 46, interact: false }
         ]
       })
     );
@@ -127,10 +131,11 @@ describe('Test Contract v1.1 headless CLI & validators', () => {
 
     const lines = fs.readFileSync(outPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     expect(lines[0].type).toBe('snapshot');
-    expect(lines[0].tick).toBe(0);
-    expect(lines[0].player.pos).toEqual([0, 0, 0]);
+    expect(lines[0].player.capacity).toBe(10);
     const events = lines.filter((l) => l.type === 'event');
     expect(events.map((e) => e.name)).toEqual(['mote_picked', 'deposit', 'lantern_lit', 'game_over']);
+    expect(events[2].data.relight).toBe(false);
+    expect(events[3].data.reason).toBe('dawn_survived');
     expect(lines.at(-1).state).toBe('won');
 
     // Pause freeze check via runSimulation
@@ -150,12 +155,12 @@ describe('Test Contract v1.1 headless CLI & validators', () => {
     expect(snap10.sim_tick).toBe(2);
   });
 
-  it('completes 21,600 ticks on Night 3 well under 30 seconds and stays 100% deterministic', () => {
+  it('completes full 18,000-tick Night 3 (and 21,600-tick override) under 30s with 100% determinism', () => {
     const dir = makeTempDir();
     const out1 = path.join(dir, 'n3_a.jsonl');
     const out2 = path.join(dir, 'n3_b.jsonl');
     const safeScenario = path.join(dir, 'n3_safe.json');
-    fs.writeFileSync(safeScenario, JSON.stringify({ player: { pos: [0, 6, 4], flames: 99 } }));
+    fs.writeFileSync(safeScenario, JSON.stringify({ player: { pos: [0, 6, 4], flames: 999 }, time_left_s: 360 }));
 
     const t0 = performance.now();
     execFileSync('node', [

@@ -3,7 +3,7 @@ export type Vec2 = [number, number];
 export type NightId = 1 | 2 | 3;
 
 export type GameStatus = 'playing' | 'paused' | 'won' | 'lost';
-export type ShadeBehaviorState = 'spawning' | 'wander' | 'chase' | 'recoil' | 'stunned';
+export type ShadeBehaviorState = 'spawning' | 'wander' | 'chase' | 'recoil' | 'stunned' | 'drain';
 export type DrifterBehaviorState = 'idle' | 'chase' | 'flee';
 export type MoteKind = 'random' | 'dropped';
 
@@ -32,6 +32,7 @@ export interface ScenarioPlayer {
   pos?: Vec3;
   carried?: number;
   flames?: number;
+  successful_lights?: number;
   invuln_ticks?: number;
   dash_cd_ticks?: number;
   pulse_cd_ticks?: number;
@@ -50,6 +51,7 @@ export interface ScenarioShadeObj {
   pos: Vec3;
   state?: ShadeBehaviorState;
   state_ticks_left?: number;
+  target_lantern_id?: string;
 }
 
 export interface ScenarioLanternObj {
@@ -57,6 +59,8 @@ export interface ScenarioLanternObj {
   pos?: Vec3;
   deposited?: number;
   lit?: boolean;
+  fuel?: number;
+  ever_lit?: boolean;
 }
 
 export interface ScenarioDrifterObj {
@@ -95,6 +99,8 @@ export interface PlayerState {
   facing: Vec2;
   flames: number;
   carried: number;
+  capacity: number;
+  successfulLights: number;
   invulnTicks: number;
   dashTicksLeft: number;
   dashDir: Vec2;
@@ -109,6 +115,9 @@ export interface LanternState {
   pos: Vec3;
   lit: boolean;
   deposited: number;
+  fuelTicks: number;
+  everLit: boolean;
+  relitCount: number;
 }
 
 export interface MoteState {
@@ -130,6 +139,8 @@ export interface ShadeState {
   safePushTicksLeft: number;
   wanderDir: Vec2;
   wanderTimerTicks: number;
+  targetLanternId: string | null;
+  drainTicks: number;
   createdTick: number;
 }
 
@@ -199,7 +210,10 @@ export type SimEvent =
   | { type: 'event'; tick: number; name: 'night_start'; data: { night: NightId } }
   | { type: 'event'; tick: number; name: 'mote_picked'; data: { carried: number } }
   | { type: 'event'; tick: number; name: 'deposit'; data: { lantern_id: string; amount: number; deposited: number } }
-  | { type: 'event'; tick: number; name: 'lantern_lit'; data: { lantern_id: string } }
+  | { type: 'event'; tick: number; name: 'lantern_lit'; data: { lantern_id: string; relight: boolean } }
+  | { type: 'event'; tick: number; name: 'refuel'; data: { lantern_id: string; amount: number; fuel: number } }
+  | { type: 'event'; tick: number; name: 'lantern_out'; data: { lantern_id: string } }
+  | { type: 'event'; tick: number; name: 'fuel_drain'; data: { lantern_id: string; shade_id: string; fuel: number } }
   | { type: 'event'; tick: number; name: 'pulse'; data: { stunned_ids: string[] } }
   | { type: 'event'; tick: number; name: 'dash'; data: Record<string, never> }
   | { type: 'event'; tick: number; name: 'charm_picked'; data: { charm_id: string; charm_ticks: number } }
@@ -209,7 +223,7 @@ export type SimEvent =
   | { type: 'event'; tick: number; name: 'shade_spawned'; data: { id: string } }
   | { type: 'event'; tick: number; name: 'paused'; data: Record<string, never> }
   | { type: 'event'; tick: number; name: 'resumed'; data: Record<string, never> }
-  | { type: 'event'; tick: number; name: 'game_over'; data: { result: 'won' | 'lost'; reason: 'all_lit' | 'dawn' | 'no_flames' } };
+  | { type: 'event'; tick: number; name: 'game_over'; data: { result: 'won' | 'lost'; reason: 'dawn_survived' | 'dawn' | 'no_flames' } };
 
 export interface SimSnapshot {
   type: 'snapshot';
@@ -229,6 +243,7 @@ export interface SimSnapshot {
     grounded: boolean;
     flames: number;
     carried: number;
+    capacity: number;
     invuln: boolean;
     dash_cd_s: number;
     pulse_cd_s: number;
@@ -239,6 +254,9 @@ export interface SimSnapshot {
     pos: Vec3;
     lit: boolean;
     deposited: number;
+    fuel: number;
+    ever_lit: boolean;
+    relit_count: number;
   }>;
   shades: Array<{
     id: string;

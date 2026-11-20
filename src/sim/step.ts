@@ -4,6 +4,10 @@ import {
   CHARM_SPEED,
   DASH_CD_TICKS,
   DASH_TICKS,
+  DRAIN_CHASE_DIST_M,
+  DRAIN_LOG_INTERVAL_TICKS,
+  DRAIN_PER_TICK,
+  DRAIN_RANGE_M,
   DRIFTER_AGGRO_MIN_CARRIED,
   DRIFTER_AGGRO_RADIUS,
   DRIFTER_FAST_SPEED,
@@ -19,9 +23,13 @@ import {
   FALL_RESPAWN_WAIT_TICKS,
   FALL_VOID_Y,
   FOG_BOUND_RADIUS,
+  FUEL_DECAY_PER_TICK,
+  FUEL_MAX_TICKS,
+  FUEL_PER_MOTE_TICKS,
   GRAVITY,
   INVULN_TICKS,
   JUMP_VELOCITY,
+  LOW_FUEL_TICKS,
   MAX_ACTIVE_MOTES,
   MOTE_RESPAWN_INTERVAL_TICKS,
   MOVE_ACCEL,
@@ -62,7 +70,7 @@ import type {
   Vec2,
   Vec3
 } from './types';
-import { allocateNextId, dist3D, distXZ, round3 } from './world';
+import { allocateNextId, computeCapacity, dist3D, distXZ, fuelTicksToValue, round3 } from './world';
 
 function sortedIds<T extends { id: string }>(items: ReadonlyArray<T>): T[] {
   return [...items].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -143,7 +151,7 @@ function pushShadeOutOfSafeZone(
   for (let pass = 0; pass < 3; pass++) {
     let adjusted = false;
     for (const lantern of lanterns) {
-      if (!lantern.lit) continue;
+      if (!lantern.lit || lantern.fuelTicks < LOW_FUEL_TICKS) continue;
       const dx = shade.pos[0] - lantern.pos[0];
       const dz = shade.pos[2] - lantern.pos[2];
       const d = Math.hypot(dx, dz);
@@ -285,9 +293,71 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
     if (shade.stateTicksLeft > 0) {
       shade.stateTicksLeft -= 1;
       if (shade.stateTicksLeft === 0) {
-        if (shade.state === 'spawning' || shade.state === 'recoil' || shade.state === 'stunned') {
+        if (shade.state === 'stunned') {
+          shade.state = 'wander';
+          shade.targetLanternId = null;
+          shade.drainTicks = 0;
+        } else if (shade.state === 'spawning' || shade.state === 'recoil') {
           const d = dist3D(shade.pos, [p.pos[0], p.pos[1] + 1, p.pos[2]]);
           shade.state = d <= SHADE_DETECT_RADIUS ? 'chase' : 'wander';
+        }
+      }
+    }
+  }
+
+  // Step 2b: Subtract natural fuel decay + drain; extinguish fuel <= 0 -> lantern_out
+  const drainingShadesByLantern = new Map<string, ShadeState[]>();
+  for (const shade of sortedIds(state.shades)) {
+    if (shade.state === 'drain' && shade.targetLanternId !== null) {
+      const target = state.lanterns.find((l) => l.id === shade.targetLanternId);
+      if (target && target.lit) {
+        shade.drainTicks += 1;
+        const list = drainingShadesByLantern.get(target.id);
+        if (list) list.push(shade);
+        else drainingShadesByLantern.set(target.id, [shade]);
+      } else {
+        shade.state = 'wander';
+        shade.targetLanternId = null;
+        shade.drainTicks = 0;
+      }
+    }
+  }
+
+  for (const lantern of sortedIds(state.lanterns)) {
+    if (!lantern.lit) continue;
+    const drainers = drainingShadesByLantern.get(lantern.id);
+    const drainAmount = drainers ? drainers.length * DRAIN_PER_TICK : 0;
+    lantern.fuelTicks = Math.max(0, lantern.fuelTicks - (FUEL_DECAY_PER_TICK + drainAmount));
+    const fuelValue = fuelTicksToValue(lantern.fuelTicks);
+
+    if (drainers) {
+      for (const s of drainers) {
+        if (s.drainTicks % DRAIN_LOG_INTERVAL_TICKS === 0) {
+          events.push({
+            type: 'event',
+            tick: state.tick,
+            name: 'fuel_drain',
+            data: { lantern_id: lantern.id, shade_id: s.id, fuel: fuelValue }
+          });
+        }
+      }
+    }
+
+    if (lantern.fuelTicks <= 0) {
+      lantern.lit = false;
+      lantern.fuelTicks = 0;
+      lantern.deposited = 0;
+      events.push({
+        type: 'event',
+        tick: state.tick,
+        name: 'lantern_out',
+        data: { lantern_id: lantern.id }
+      });
+      if (drainers) {
+        for (const s of drainers) {
+          s.state = 'wander';
+          s.targetLanternId = null;
+          s.drainTicks = 0;
         }
       }
     }
@@ -411,10 +481,10 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
 
   // 4. Pickup fireflies & charms
   if (p.fallWaitTicks === 0 && p.flames > 0) {
-    if (p.carried < TUNING.carry_capacity && state.motes.length > 0) {
+    if (p.carried < p.capacity && state.motes.length > 0) {
       const pickedIds = new Set<string>();
       for (const mote of sortedIds(state.motes)) {
-        if (p.carried >= TUNING.carry_capacity) break;
+        if (p.carried >= p.capacity) break;
         if (mote.createdTick >= state.simTick) continue;
         if (
           distXZ(p.pos, mote.pos) <= TUNING.pickup_radius &&
@@ -450,12 +520,12 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
     }
   }
 
-  // 5. Interact with nearest unlit lantern (radius 2.0 m XZ)
+  // 5. Interact with nearest receivable lantern (unlit, OR lit with fuel < 100) in 2.0 m XZ
   if (p.fallWaitTicks === 0 && p.flames > 0 && interactPressed && p.carried > 0) {
     let bestLantern: LanternState | null = null;
     let bestDist = Infinity;
     for (const lantern of sortedIds(state.lanterns)) {
-      if (lantern.lit) continue;
+      if (lantern.lit && fuelTicksToValue(lantern.fuelTicks) >= TUNING.fuel_max) continue;
       const d = distXZ(p.pos, lantern.pos);
       if (d <= TUNING.interact_radius && d < bestDist && Math.abs(p.pos[1] - lantern.pos[1]) <= 2.5) {
         bestDist = d;
@@ -463,29 +533,69 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
       }
     }
     if (bestLantern) {
-      const amount = Math.min(p.carried, TUNING.lantern_cost - bestLantern.deposited);
-      if (amount > 0) {
-        p.carried -= amount;
-        bestLantern.deposited += amount;
-        state.score += amount * TUNING.score.per_mote;
-        events.push({
-          type: 'event',
-          tick: state.tick,
-          name: 'deposit',
-          data: { lantern_id: bestLantern.id, amount, deposited: bestLantern.deposited }
-        });
-        if (bestLantern.deposited >= TUNING.lantern_cost) {
-          bestLantern.lit = true;
-          state.score += TUNING.score.per_lantern;
+      if (!bestLantern.lit) {
+        const required = bestLantern.everLit ? TUNING.relight_cost : TUNING.lantern_cost;
+        const amount = Math.min(p.carried, required - bestLantern.deposited);
+        if (amount > 0) {
+          p.carried -= amount;
+          bestLantern.deposited += amount;
+          state.score += amount * TUNING.score.per_mote;
           events.push({
             type: 'event',
             tick: state.tick,
-            name: 'lantern_lit',
-            data: { lantern_id: bestLantern.id }
+            name: 'deposit',
+            data: { lantern_id: bestLantern.id, amount, deposited: bestLantern.deposited }
           });
-          for (const shade of state.shades) {
-            if (distXZ(shade.pos, bestLantern.pos) < TUNING.safe_radius) {
-              shade.safePushTicksLeft = SAFE_PUSH_MAX_TICKS;
+          if (bestLantern.deposited >= required) {
+            const wasEverLit = bestLantern.everLit;
+            bestLantern.lit = true;
+            bestLantern.fuelTicks = FUEL_MAX_TICKS;
+            bestLantern.everLit = true;
+            if (wasEverLit) bestLantern.relitCount += 1;
+            p.successfulLights += 1;
+            p.capacity = computeCapacity(p.successfulLights);
+            state.score += wasEverLit ? TUNING.score.per_relight : TUNING.score.per_lantern;
+            events.push({
+              type: 'event',
+              tick: state.tick,
+              name: 'lantern_lit',
+              data: { lantern_id: bestLantern.id, relight: wasEverLit }
+            });
+            for (const shade of state.shades) {
+              if (distXZ(shade.pos, bestLantern.pos) < TUNING.safe_radius) {
+                shade.safePushTicksLeft = SAFE_PUSH_MAX_TICKS;
+              }
+            }
+          }
+        }
+      } else {
+        const needed = Math.ceil((FUEL_MAX_TICKS - bestLantern.fuelTicks) / FUEL_PER_MOTE_TICKS);
+        const used = Math.min(p.carried, needed);
+        if (used > 0) {
+          const wasUnsafe = bestLantern.fuelTicks < LOW_FUEL_TICKS;
+          p.carried -= used;
+          bestLantern.fuelTicks = Math.min(FUEL_MAX_TICKS, bestLantern.fuelTicks + used * FUEL_PER_MOTE_TICKS);
+          state.score += used * TUNING.score.per_mote;
+          events.push({
+            type: 'event',
+            tick: state.tick,
+            name: 'refuel',
+            data: {
+              lantern_id: bestLantern.id,
+              amount: used,
+              fuel: fuelTicksToValue(bestLantern.fuelTicks)
+            }
+          });
+          if (wasUnsafe && bestLantern.fuelTicks >= LOW_FUEL_TICKS) {
+            for (const shade of state.shades) {
+              if (shade.state === 'drain' && shade.targetLanternId === bestLantern.id) {
+                shade.state = 'wander';
+                shade.targetLanternId = null;
+                shade.drainTicks = 0;
+              }
+              if (distXZ(shade.pos, bestLantern.pos) < TUNING.safe_radius) {
+                shade.safePushTicksLeft = SAFE_PUSH_MAX_TICKS;
+              }
             }
           }
         }
@@ -514,6 +624,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
     for (const shade of sortedIds(state.shades)) {
       if (shade.createdTick >= state.simTick) continue;
       if (dist3D(pulseCenter, shade.pos) <= TUNING.pulse_radius) {
+        const wasDraining = shade.state === 'drain';
         const dx = shade.pos[0] - p.pos[0];
         const dz = shade.pos[2] - p.pos[2];
         const d = Math.hypot(dx, dz);
@@ -521,7 +632,9 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
         shade.state = 'stunned';
         shade.stateTicksLeft = PULSE_STUN_TICKS;
         shade.pushTicksLeft = PULSE_PUSH_TICKS;
-        state.score += TUNING.score.per_stun;
+        shade.targetLanternId = null;
+        shade.drainTicks = 0;
+        state.score += wasDraining ? TUNING.score.per_stun_drain : TUNING.score.per_stun;
         stunnedIds.push(shade.id);
       }
     }
@@ -593,30 +706,116 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
     }
 
     const dToPlayer = dist3D(shade.pos, [p.pos[0], p.pos[1] + 1, p.pos[2]]);
+
+    if (shade.state === 'drain') {
+      if (dToPlayer <= DRAIN_CHASE_DIST_M) {
+        shade.state = 'chase';
+        shade.targetLanternId = null;
+        shade.drainTicks = 0;
+      } else {
+        const target = shade.targetLanternId
+          ? state.lanterns.find((l) => l.id === shade.targetLanternId)
+          : undefined;
+        if (
+          !target ||
+          !target.lit ||
+          target.fuelTicks >= LOW_FUEL_TICKS ||
+          distXZ(shade.pos, target.pos) > DRAIN_RANGE_M
+        ) {
+          shade.state = 'wander';
+          shade.targetLanternId = null;
+          shade.drainTicks = 0;
+        } else {
+          continue; // Stay still while draining fuel
+        }
+      }
+    }
+
     if (shade.state === 'wander' && dToPlayer <= SHADE_DETECT_RADIUS) {
       shade.state = 'chase';
+      shade.targetLanternId = null;
+      shade.drainTicks = 0;
     } else if (shade.state === 'chase' && dToPlayer > SHADE_LEASH_RADIUS) {
       shade.state = 'wander';
       shade.wanderTimerTicks = 0;
     }
 
     if (shade.state === 'wander') {
-      if (shade.wanderTimerTicks <= 0) {
-        const angle = state.rng() * Math.PI * 2;
-        shade.wanderDir = [Math.cos(angle), Math.sin(angle)];
-        shade.wanderTimerTicks = 90 + Math.floor(state.rng() * 60);
+      // Weak lit lantern (< 30 fuel) first, then nearest unlit lantern, tie-break smaller id
+      let targetLantern: LanternState | null = null;
+      let bestWeakDist = Infinity;
+      for (const l of sortedIds(state.lanterns)) {
+        if (l.lit && l.fuelTicks < LOW_FUEL_TICKS) {
+          const d = distXZ(shade.pos, l.pos);
+          if (d < bestWeakDist) {
+            bestWeakDist = d;
+            targetLantern = l;
+          }
+        }
       }
-      const wStep = (map.shadeSpeed * 0.5) * DT;
-      const rawX = sx0 + shade.wanderDir[0] * wStep;
-      const rawZ = sz0 + shade.wanderDir[1] * wStep;
-      const [nx, nz] = resolveMovementObstacles(state.night, sx0, sz0, rawX, rawZ, shade.pos[1]);
-      const floor = getHighestGroundAt(state.night, nx, nz, shade.pos[1]);
-      if (floor !== null) {
-        shade.pos[0] = nx;
-        shade.pos[2] = nz;
-        shade.pos[1] = floor + SHADE_DEFAULT_Y_OFFSET;
+      if (!targetLantern) {
+        let bestUnlitDist = Infinity;
+        for (const l of sortedIds(state.lanterns)) {
+          if (!l.lit) {
+            const d = distXZ(shade.pos, l.pos);
+            if (d < bestUnlitDist) {
+              bestUnlitDist = d;
+              targetLantern = l;
+            }
+          }
+        }
+      }
+
+      if (targetLantern) {
+        const dToLantern = distXZ(shade.pos, targetLantern.pos);
+        if (targetLantern.lit && targetLantern.fuelTicks < LOW_FUEL_TICKS && dToLantern <= DRAIN_RANGE_M) {
+          shade.state = 'drain';
+          shade.targetLanternId = targetLantern.id;
+          shade.drainTicks = 0;
+          continue;
+        }
+        const dx = targetLantern.pos[0] - sx0;
+        const dz = targetLantern.pos[2] - sz0;
+        if (dToLantern > 0.5) {
+          const wStep = Math.min(dToLantern, map.shadeSpeed * 0.5 * DT);
+          const rawX = sx0 + (dx / dToLantern) * wStep;
+          const rawZ = sz0 + (dz / dToLantern) * wStep;
+          const [nx, nz] = resolveMovementObstacles(state.night, sx0, sz0, rawX, rawZ, shade.pos[1]);
+          const floor = getHighestGroundAt(state.night, nx, nz, shade.pos[1]);
+          if (floor !== null) {
+            shade.pos[0] = nx;
+            shade.pos[2] = nz;
+            shade.pos[1] = floor + SHADE_DEFAULT_Y_OFFSET;
+          }
+          if (
+            targetLantern.lit &&
+            targetLantern.fuelTicks < LOW_FUEL_TICKS &&
+            distXZ(shade.pos, targetLantern.pos) <= DRAIN_RANGE_M
+          ) {
+            shade.state = 'drain';
+            shade.targetLanternId = targetLantern.id;
+            shade.drainTicks = 0;
+            continue;
+          }
+        }
       } else {
-        shade.wanderDir = [-shade.wanderDir[0], -shade.wanderDir[1]];
+        if (shade.wanderTimerTicks <= 0) {
+          const angle = state.rng() * Math.PI * 2;
+          shade.wanderDir = [Math.cos(angle), Math.sin(angle)];
+          shade.wanderTimerTicks = 90 + Math.floor(state.rng() * 60);
+        }
+        const wStep = (map.shadeSpeed * 0.5) * DT;
+        const rawX = sx0 + shade.wanderDir[0] * wStep;
+        const rawZ = sz0 + shade.wanderDir[1] * wStep;
+        const [nx, nz] = resolveMovementObstacles(state.night, sx0, sz0, rawX, rawZ, shade.pos[1]);
+        const floor = getHighestGroundAt(state.night, nx, nz, shade.pos[1]);
+        if (floor !== null) {
+          shade.pos[0] = nx;
+          shade.pos[2] = nz;
+          shade.pos[1] = floor + SHADE_DEFAULT_Y_OFFSET;
+        } else {
+          shade.wanderDir = [-shade.wanderDir[0], -shade.wanderDir[1]];
+        }
       }
       pushShadeOutOfSafeZone(shade, state.lanterns, p.pos, false);
     } else if (shade.state === 'chase') {
@@ -773,7 +972,9 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
     const validPoints = map.shadeSpawnPoints.filter(
       (pt) =>
         distXZ(pt, p.pos) >= SHADE_SPAWN_MIN_PLAYER_DIST &&
-        !state.lanterns.some((l) => l.lit && distXZ(pt, l.pos) < TUNING.safe_radius)
+        !state.lanterns.some(
+          (l) => l.lit && l.fuelTicks >= LOW_FUEL_TICKS && distXZ(pt, l.pos) < TUNING.safe_radius
+        )
     );
     const pool = [...validPoints];
     for (let i = 0; i < desired && state.shades.length < map.maxShades && pool.length > 0; i++) {
@@ -791,6 +992,8 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
         safePushTicksLeft: 0,
         wanderDir: [1, 0],
         wanderTimerTicks: 0,
+        targetLanternId: null,
+        drainTicks: 0,
         createdTick: state.simTick
       });
       events.push({ type: 'event', tick: state.tick, name: 'shade_spawned', data: { id } });
@@ -818,7 +1021,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
     });
   }
 
-  // 11. Win / Loss resolution
+  // 11. Win / Loss resolution (no_flames always evaluated first, then dawn survival >= ceil(0.6 * total))
   if (p.flames <= 0) {
     state.status = 'lost';
     events.push({
@@ -827,25 +1030,30 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
       name: 'game_over',
       data: { result: 'lost', reason: 'no_flames' }
     });
-  } else if (state.lanterns.every((l) => l.lit)) {
-    state.score +=
-      Math.floor(state.timeLeftS) * TUNING.score.per_second_left +
-      p.flames * TUNING.score.per_flame_left;
-    state.status = 'won';
-    events.push({
-      type: 'event',
-      tick: state.tick,
-      name: 'game_over',
-      data: { result: 'won', reason: 'all_lit' }
-    });
   } else if (state.timeLeftS <= 0) {
-    state.status = 'lost';
-    events.push({
-      type: 'event',
-      tick: state.tick,
-      name: 'game_over',
-      data: { result: 'lost', reason: 'dawn' }
-    });
+    const litLanterns = state.lanterns.filter((l) => l.lit);
+    const requiredLit = Math.ceil(TUNING.win_ratio * state.lanterns.length);
+    if (litLanterns.length >= requiredLit) {
+      for (const l of litLanterns) {
+        state.score += TUNING.score.per_lantern_dawn + Math.floor(l.fuelTicks / 60);
+      }
+      state.score += p.flames * TUNING.score.per_flame_left;
+      state.status = 'won';
+      events.push({
+        type: 'event',
+        tick: state.tick,
+        name: 'game_over',
+        data: { result: 'won', reason: 'dawn_survived' }
+      });
+    } else {
+      state.status = 'lost';
+      events.push({
+        type: 'event',
+        tick: state.tick,
+        name: 'game_over',
+        data: { result: 'lost', reason: 'dawn' }
+      });
+    }
   }
 
   return events;

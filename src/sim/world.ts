@@ -1,5 +1,6 @@
 import {
   DRIFTER_FLEE_STEAL_TICKS,
+  FUEL_MAX_TICKS,
   INITIAL_MOTE_COUNT,
   PULSE_STUN_TICKS,
   RECOIL_TICKS,
@@ -20,6 +21,19 @@ import type {
   SimState,
   Vec3
 } from './types';
+
+export function round1(value: number): number {
+  const rounded = Math.round(value * 10) / 10;
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+export function computeCapacity(successfulLights: number): number {
+  return Math.min(TUNING.capacity_max, TUNING.carry_capacity + 2 * Math.max(0, successfulLights));
+}
+
+export function fuelTicksToValue(fuelTicks: number): number {
+  return fuelTicks <= 0 ? 0 : round1(fuelTicks / 60);
+}
 
 export function round3(value: number): number {
   const rounded = Math.round(value * 1000) / 1000;
@@ -101,7 +115,10 @@ export function createWorld(
     id: l.id,
     pos: [l.pos[0], l.pos[1], l.pos[2]],
     lit: false,
-    deposited: 0
+    deposited: 0,
+    fuelTicks: 0,
+    everLit: false,
+    relitCount: 0
   }));
 
   if (scenario?.lanterns) {
@@ -115,6 +132,21 @@ export function createWorld(
         if (override.lit && override.deposited === undefined) {
           target.deposited = Math.max(target.deposited, TUNING.lantern_cost);
         }
+      }
+      if (override.ever_lit !== undefined) {
+        target.everLit = override.ever_lit;
+      } else if (target.lit) {
+        target.everLit = true;
+      }
+      if (target.lit) {
+        const fuelVal = override.fuel !== undefined ? override.fuel : TUNING.fuel_max;
+        target.fuelTicks = Math.max(1, Math.min(FUEL_MAX_TICKS, Math.round(fuelVal * 60)));
+        if (override.fuel !== undefined && override.fuel <= 0) {
+          target.lit = false;
+          target.fuelTicks = 0;
+        }
+      } else {
+        target.fuelTicks = 0;
       }
     }
   }
@@ -188,6 +220,14 @@ export function createWorld(
             : st === 'recoil'
               ? RECOIL_TICKS
               : 0;
+      let targetLanternId: string | null = entry.target_lantern_id ?? null;
+      if (st === 'drain' && targetLanternId === null) {
+        const litLanterns = lanterns.filter((l) => l.lit);
+        if (litLanterns.length > 0) {
+          litLanterns.sort((a, b) => distXZ(entry.pos, a.pos) - distXZ(entry.pos, b.pos));
+          targetLanternId = litLanterns[0].id;
+        }
+      }
       shades.push({
         id: ids[idx],
         pos: [entry.pos[0], entry.pos[1], entry.pos[2]],
@@ -199,6 +239,8 @@ export function createWorld(
         safePushTicksLeft: 0,
         wanderDir: [1, 0],
         wanderTimerTicks: 0,
+        targetLanternId,
+        drainTicks: 0,
         createdTick: 0
       });
     });
@@ -248,6 +290,8 @@ export function createWorld(
     }));
   }
 
+  const successfulLights = scenario?.player?.successful_lights ?? 0;
+
   return {
     seed,
     night,
@@ -276,6 +320,8 @@ export function createWorld(
       facing: [map.spawnFacing[0], map.spawnFacing[1]],
       flames: scenario?.player?.flames ?? TUNING.flames,
       carried: scenario?.player?.carried ?? 0,
+      capacity: computeCapacity(successfulLights),
+      successfulLights,
       invulnTicks: scenario?.player?.invuln_ticks ?? 0,
       dashTicksLeft: 0,
       dashDir: [map.spawnFacing[0], map.spawnFacing[1]],
@@ -325,6 +371,7 @@ export function buildSnapshot(state: SimState): SimSnapshot {
       grounded: state.player.grounded,
       flames: state.player.flames,
       carried: state.player.carried,
+      capacity: state.player.capacity,
       invuln: state.player.invulnTicks > 0,
       dash_cd_s: round3(state.player.dashCdTicks / 60),
       pulse_cd_s: round3(state.player.pulseCdTicks / 60),
@@ -334,7 +381,10 @@ export function buildSnapshot(state: SimState): SimSnapshot {
       id: l.id,
       pos: roundPos(l.pos),
       lit: l.lit,
-      deposited: l.deposited
+      deposited: l.deposited,
+      fuel: l.lit ? fuelTicksToValue(l.fuelTicks) : 0,
+      ever_lit: l.everLit,
+      relit_count: l.relitCount
     })),
     shades: state.shades.map((s) => ({
       id: s.id,

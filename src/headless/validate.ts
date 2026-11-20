@@ -21,7 +21,8 @@ const VALID_SHADE_STATES = new Set<ShadeBehaviorState>([
   'wander',
   'chase',
   'recoil',
-  'stunned'
+  'stunned',
+  'drain'
 ]);
 const VALID_DRIFTER_STATES = new Set<DrifterBehaviorState>(['idle', 'chase', 'flee']);
 const VALID_MOTE_KINDS = new Set<MoteKind>(['random', 'dropped']);
@@ -134,6 +135,9 @@ export function parseAndValidateScenario(rawJson: string): ScenarioConfig {
     if (root.player.pos !== undefined) out.player.pos = assertVec3(root.player.pos, 'scenario.player.pos');
     if (root.player.carried !== undefined) out.player.carried = assertNonNegInt(root.player.carried, 'scenario.player.carried');
     if (root.player.flames !== undefined) out.player.flames = assertNonNegInt(root.player.flames, 'scenario.player.flames');
+    if (root.player.successful_lights !== undefined) {
+      out.player.successful_lights = assertNonNegInt(root.player.successful_lights, 'scenario.player.successful_lights');
+    }
     if (root.player.invuln_ticks !== undefined) out.player.invuln_ticks = assertNonNegInt(root.player.invuln_ticks, 'scenario.player.invuln_ticks');
     if (root.player.dash_cd_ticks !== undefined) out.player.dash_cd_ticks = assertNonNegInt(root.player.dash_cd_ticks, 'scenario.player.dash_cd_ticks');
     if (root.player.pulse_cd_ticks !== undefined) out.player.pulse_cd_ticks = assertNonNegInt(root.player.pulse_cd_ticks, 'scenario.player.pulse_cd_ticks');
@@ -200,11 +204,15 @@ export function parseAndValidateScenario(rawJson: string): ScenarioConfig {
         item.state_ticks_left !== undefined
           ? assertNonNegInt(item.state_ticks_left, `scenario.shades[${idx}].state_ticks_left`)
           : undefined;
+      if (item.target_lantern_id !== undefined && typeof item.target_lantern_id !== 'string') {
+        throw new ContractValidationError(`scenario.shades[${idx}].target_lantern_id must be a string`);
+      }
       return {
         ...(item.id !== undefined ? { id: item.id } : {}),
         pos,
         ...(item.state !== undefined ? { state: item.state as ShadeBehaviorState } : {}),
-        ...(ticksLeft !== undefined ? { state_ticks_left: ticksLeft } : {})
+        ...(ticksLeft !== undefined ? { state_ticks_left: ticksLeft } : {}),
+        ...(item.target_lantern_id !== undefined ? { target_lantern_id: item.target_lantern_id } : {})
       };
     });
   }
@@ -275,6 +283,19 @@ export function parseAndValidateScenario(rawJson: string): ScenarioConfig {
           throw new ContractValidationError(`scenario.lanterns[${idx}].lit must be a boolean`);
         }
         res.lit = item.lit;
+      }
+      if (item.fuel !== undefined) {
+        const fv = assertFiniteNumber(item.fuel, `scenario.lanterns[${idx}].fuel`);
+        if (fv < 0 || fv > 100) {
+          throw new ContractValidationError(`scenario.lanterns[${idx}].fuel must be in [0, 100]`);
+        }
+        res.fuel = fv;
+      }
+      if (item.ever_lit !== undefined) {
+        if (typeof item.ever_lit !== 'boolean') {
+          throw new ContractValidationError(`scenario.lanterns[${idx}].ever_lit must be a boolean`);
+        }
+        res.ever_lit = item.ever_lit;
       }
       return res;
     });
