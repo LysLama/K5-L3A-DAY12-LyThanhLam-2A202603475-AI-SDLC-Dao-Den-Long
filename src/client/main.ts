@@ -13,11 +13,29 @@ import { Soundscape } from './audio';
 import { computeBenchCameraPosition } from './benchOrbit';
 import { ThirdPersonCamera } from './camera';
 import { type GameSettings, HudController, type UiScreen } from './hud';
-import { mapKeysToInput } from './inputMapper';
+import {
+  DEFAULT_KEYBINDINGS,
+  KEY_ACTION_ORDER,
+  type KeyBindings,
+  mapKeysToInput
+} from './inputMapper';
 import { IslandScene } from './sceneBuilder';
 
 const SEED_BASE = 20261120;
 const SETTINGS_KEY = 'ddl_settings_v2';
+
+function mergeKeybindings(raw: unknown): KeyBindings {
+  const out: KeyBindings = { ...DEFAULT_KEYBINDINGS };
+  if (raw && typeof raw === 'object') {
+    const rec = raw as Record<string, unknown>;
+    for (const action of KEY_ACTION_ORDER) {
+      if (typeof rec[action] === 'string' && rec[action].length > 0) {
+        out[action] = rec[action] as string;
+      }
+    }
+  }
+  return out;
+}
 
 function loadSettings(): GameSettings {
   try {
@@ -30,13 +48,23 @@ function loadSettings(): GameSettings {
           typeof parsed.sensitivity === 'number'
             ? Math.max(40, Math.min(200, parsed.sensitivity))
             : 100,
-        colorblind: typeof parsed.colorblind === 'boolean' ? parsed.colorblind : false
+        colorblind: typeof parsed.colorblind === 'boolean' ? parsed.colorblind : false,
+        reduceMotion: typeof parsed.reduceMotion === 'boolean' ? parsed.reduceMotion : false,
+        largeText: typeof parsed.largeText === 'boolean' ? parsed.largeText : false,
+        keybindings: mergeKeybindings(parsed.keybindings)
       };
     }
   } catch {
     // ignore storage restriction
   }
-  return { volume: 75, sensitivity: 100, colorblind: false };
+  return {
+    volume: 75,
+    sensitivity: 100,
+    colorblind: false,
+    reduceMotion: false,
+    largeText: false,
+    keybindings: { ...DEFAULT_KEYBINDINGS }
+  };
 }
 
 function saveSettings(settings: GameSettings): void {
@@ -123,6 +151,7 @@ class GameApp {
 
     this.audio.setVolume(this.settings.volume / 100);
     this.camRig.setSensitivity(this.settings.sensitivity / 100);
+    this.camRig.setReduceMotion(this.settings.reduceMotion);
 
     this.state = this.benchConfig.active
       ? createBenchWorld(this.benchConfig.seed)
@@ -183,6 +212,7 @@ class GameApp {
         saveSettings(next);
         this.audio.setVolume(next.volume / 100);
         this.camRig.setSensitivity(next.sensitivity / 100);
+        this.camRig.setReduceMotion(next.reduceMotion);
       }
     });
 
@@ -191,9 +221,14 @@ class GameApp {
 
     this.onKeyDown = (e: KeyboardEvent) => {
       if (this.benchConfig.active) return;
+      if (this.hud.isCapturingKeybind()) return;
+      const targetTag = (e.target as HTMLElement | null)?.tagName;
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') return;
+
       this.audio.unlock();
-      if (e.repeat && ['KeyP', 'Escape', 'KeyM', 'KeyH', 'Enter'].includes(e.code)) return;
-      if (e.code === 'KeyP' || e.code === 'Escape') {
+      const pauseCode = this.settings.keybindings.pause;
+      if (e.repeat && [pauseCode, 'KeyP', 'Escape', 'KeyM', 'KeyH', 'Enter'].includes(e.code)) return;
+      if (e.code === pauseCode || e.code === 'Escape') {
         if (this.screen === 'playing' || this.screen === 'paused') {
           this.togglePause();
         }
@@ -384,7 +419,8 @@ class GameApp {
       (sum, v) => sum + (v ?? 0),
       0
     );
-    this.hud.renderResult(this.state, this.campaignMode, campaignTotal);
+    const nightsWon = Object.keys(this.campaignScores).length;
+    this.hud.renderResult(this.state, this.campaignMode, campaignTotal, nightsWon);
     return true;
   }
 
@@ -515,7 +551,13 @@ class GameApp {
 
       let tickEvents: SimEvent[] = [];
       let simDt = 0;
-      const liveInput = mapKeysToInput(this.pressedKeys, this.camRig.yawDeg, false, false);
+      const liveInput = mapKeysToInput(
+        this.pressedKeys,
+        this.camRig.yawDeg,
+        false,
+        false,
+        this.settings.keybindings
+      );
       const isPlaying = this.screen === 'playing' && this.state.status === 'playing';
       const isMovingInput = isPlaying && (liveInput.move[0] !== 0 || liveInput.move[1] !== 0);
 
@@ -546,7 +588,8 @@ class GameApp {
             this.pressedKeys,
             this.camRig.yawDeg,
             this.rightPulseQueued,
-            false
+            false,
+            this.settings.keybindings
           );
           this.rightPulseQueued = false;
           const evs = stepTick(this.state, input);
@@ -614,7 +657,17 @@ class GameApp {
         prevDrifterPositions: this.prevDrifterPositions
       });
 
-      this.camRig.update(this.camera, renderPlayerPos, isPlaying ? this.pressedKeys : new Set(), frameDt);
+      const boundKeys = new Set(Object.values(this.settings.keybindings));
+      const camTurnKeys = new Set<string>();
+      if (isPlaying) {
+        if (this.pressedKeys.has('ArrowLeft') && !boundKeys.has('ArrowLeft')) {
+          camTurnKeys.add('ArrowLeft');
+        }
+        if (this.pressedKeys.has('ArrowRight') && !boundKeys.has('ArrowRight')) {
+          camTurnKeys.add('ArrowRight');
+        }
+      }
+      this.camRig.update(this.camera, renderPlayerPos, camTurnKeys, frameDt);
       this.hud.update(this.state, frameDt, this.camera, this.screen === 'playing' || this.screen === 'paused');
 
       if (this.composer) {
