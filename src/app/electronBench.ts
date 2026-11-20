@@ -5,7 +5,12 @@ import path from 'node:path';
 app.commandLine.appendSwitch('disable-gpu-vsync');
 app.commandLine.appendSwitch('disable-frame-rate-limit');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
-if (process.platform === 'linux') {
+app.commandLine.appendSwitch('enable-high-performance-gpu');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+if (process.platform === 'win32') {
+  // OpenGL ANGLE avoids Windows D3D11 DXGI WaitForGetOffsetInRange stalls on Iris Xe
+  app.commandLine.appendSwitch('use-angle', 'gl');
+} else if (process.platform === 'linux') {
   app.commandLine.appendSwitch('no-sandbox');
 }
 
@@ -61,32 +66,31 @@ app.whenReady().then(() => {
   });
 
   win.setMenuBarVisibility(false);
-  pollTimer = setInterval(sampleMetrics, 200);
+  pollTimer = setInterval(sampleMetrics, 1500);
 
   win.webContents.on('did-finish-load', () => {
     sampleMetrics();
   });
 
-  // Watch window title or JS poll signal for bench completion -> clean exit
-  const doneCheck = setInterval(async () => {
-    if (win.isDestroyed()) return;
-    try {
-      const done = (await win.webContents.executeJavaScript('Boolean(window.__ddlBenchDone)')) as boolean;
-      if (done) {
-        clearInterval(doneCheck);
-        if (pollTimer) clearInterval(pollTimer);
-        flushMem();
-        win.close();
-        app.quit();
-      }
-    } catch {
-      // page navigating/closing
+  const finishBench = () => {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
     }
-  }, 200);
+    flushMem();
+    if (!win.isDestroyed()) win.close();
+    app.quit();
+  };
+
+  process.on('message', (msg) => {
+    if (msg === 'quit') finishBench();
+  });
 
   win.on('closed', () => {
-    clearInterval(doneCheck);
-    if (pollTimer) clearInterval(pollTimer);
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
     flushMem();
   });
 
@@ -94,7 +98,10 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (pollTimer) clearInterval(pollTimer);
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
   flushMem();
   app.quit();
 });

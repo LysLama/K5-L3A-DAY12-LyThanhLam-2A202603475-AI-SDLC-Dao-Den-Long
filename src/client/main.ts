@@ -1,9 +1,5 @@
 import './style.css';
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { DT } from '../sim/constants';
 import { getMapConfig } from '../sim/maps';
 import { stepTick } from '../sim/step';
@@ -83,9 +79,6 @@ class GameApp {
   private readonly hud: HudController;
   private readonly pressedKeys = new Set<string>();
 
-  private composer: EffectComposer | null = null;
-  private renderPass: RenderPass | null = null;
-
   private settings: GameSettings = loadSettings();
   private screen: UiScreen = 'menu';
   private campaignMode = true;
@@ -134,11 +127,16 @@ class GameApp {
       durationS: Math.max(1, Number.parseFloat(params.get('duration') ?? '30') || 30)
     };
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    this.renderer = new THREE.WebGLRenderer({
+      alpha: false,
+      antialias: false,
+      stencil: false,
+      powerPreference: 'high-performance'
+    });
+    this.renderer.setPixelRatio(this.benchConfig.active ? 1 : Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.NoToneMapping;
     this.mountEl.appendChild(this.renderer.domElement);
 
     this.camera = new THREE.PerspectiveCamera(
@@ -159,9 +157,11 @@ class GameApp {
     const mapCfg = getMapConfig(1);
     this.camRig.reset(mapCfg.spawnPos, mapCfg.spawnFacing);
     this.prevPlayerPos = [...this.state.player.pos];
+    this.prevShadePositions.clear();
+    this.prevDrifterPositions.clear();
     this.snapshotPrevActors();
     this.worldScene = new IslandScene(this.state);
-    this.setupComposer();
+    this.renderer.compile(this.worldScene.scene, this.camera);
 
     this.hud = new HudController(this.settings, {
       onStartCampaign: () => {
@@ -282,7 +282,6 @@ class GameApp {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
-      this.composer?.setSize(window.innerWidth, window.innerHeight);
     };
 
     this.onBlur = () => {
@@ -305,32 +304,11 @@ class GameApp {
       status: this.state.status,
       score: this.state.score,
       flames: this.state.player.flames,
-      carried: this.state.player.carried
+      carried: this.state.player.carried,
+      renderInfo: this.renderer.info.render
     });
 
     this.startLoop();
-  }
-
-  private setupComposer(): void {
-    try {
-      const composer = new EffectComposer(this.renderer);
-      const renderPass = new RenderPass(this.worldScene.scene, this.camera);
-      const bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        0.4,
-        0.42,
-        0.74
-      );
-      const outputPass = new OutputPass();
-      composer.addPass(renderPass);
-      composer.addPass(bloomPass);
-      composer.addPass(outputPass);
-      this.composer = composer;
-      this.renderPass = renderPass;
-    } catch {
-      this.composer = null;
-      this.renderPass = null;
-    }
   }
 
   private resetWorld(night: NightId): void {
@@ -350,11 +328,11 @@ class GameApp {
     const mapCfg = getMapConfig(night);
     this.camRig.reset(mapCfg.spawnPos, mapCfg.spawnFacing);
     this.prevPlayerPos = [...this.state.player.pos];
+    this.prevShadePositions.clear();
+    this.prevDrifterPositions.clear();
     this.snapshotPrevActors();
     this.worldScene = new IslandScene(this.state);
-    if (this.renderPass) {
-      this.renderPass.scene = this.worldScene.scene;
-    }
+    this.renderer.compile(this.worldScene.scene, this.camera);
   }
 
   private loadNightPreviewMenu(): void {
@@ -425,13 +403,25 @@ class GameApp {
   }
 
   private snapshotPrevActors(): void {
-    this.prevShadePositions.clear();
     for (const s of this.state.shades) {
-      this.prevShadePositions.set(s.id, [s.pos[0], s.pos[1], s.pos[2]]);
+      const existing = this.prevShadePositions.get(s.id);
+      if (existing) {
+        existing[0] = s.pos[0];
+        existing[1] = s.pos[1];
+        existing[2] = s.pos[2];
+      } else {
+        this.prevShadePositions.set(s.id, [s.pos[0], s.pos[1], s.pos[2]]);
+      }
     }
-    this.prevDrifterPositions.clear();
     for (const d of this.state.drifters) {
-      this.prevDrifterPositions.set(d.id, [d.pos[0], d.pos[1], d.pos[2]]);
+      const existing = this.prevDrifterPositions.get(d.id);
+      if (existing) {
+        existing[0] = d.pos[0];
+        existing[1] = d.pos[1];
+        existing[2] = d.pos[2];
+      } else {
+        this.prevDrifterPositions.set(d.id, [d.pos[0], d.pos[1], d.pos[2]]);
+      }
     }
   }
 
@@ -494,7 +484,9 @@ class GameApp {
         this.elapsedSec = benchElapsedSec;
         this.accumulator = Math.min(this.accumulator + frameDt, DT * 4);
         while (this.accumulator >= DT) {
-          this.prevPlayerPos = [0, 0, 0];
+          this.prevPlayerPos[0] = 0;
+          this.prevPlayerPos[1] = 0;
+          this.prevPlayerPos[2] = 0;
           this.snapshotPrevActors();
           stepTick(this.state, neutralBenchInput);
           this.accumulator -= DT;
@@ -518,11 +510,7 @@ class GameApp {
           prevDrifterPositions: this.prevDrifterPositions
         });
 
-        if (this.composer) {
-          this.composer.render();
-        } else {
-          this.renderer.render(this.worldScene.scene, this.camera);
-        }
+        this.renderer.render(this.worldScene.scene, this.camera);
 
         if (!this.benchReadySent) {
           this.benchReadySent = true;
@@ -670,11 +658,7 @@ class GameApp {
       this.camRig.update(this.camera, renderPlayerPos, camTurnKeys, frameDt);
       this.hud.update(this.state, frameDt, this.camera, this.screen === 'playing' || this.screen === 'paused');
 
-      if (this.composer) {
-        this.composer.render();
-      } else {
-        this.renderer.render(this.worldScene.scene, this.camera);
-      }
+      this.renderer.render(this.worldScene.scene, this.camera);
 
       this.rafId = requestAnimationFrame(tickFrame);
     };
@@ -691,7 +675,6 @@ class GameApp {
     this.camRig.dispose();
     this.worldScene.dispose();
     this.audio.dispose();
-    this.composer?.dispose();
     this.renderer.dispose();
   }
 }

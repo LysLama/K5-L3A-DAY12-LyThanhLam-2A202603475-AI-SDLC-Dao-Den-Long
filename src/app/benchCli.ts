@@ -105,11 +105,11 @@ async function main(): Promise<void> {
 
   const child = spawn(electronBinary, [electronScript], {
     env: childEnv,
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc']
   });
 
   let stderrBuf = '';
-  child.stderr.on('data', (c: Buffer) => {
+  child.stderr?.on('data', (c: Buffer) => {
     stderrBuf += c.toString('utf8');
   });
 
@@ -120,7 +120,13 @@ async function main(): Promise<void> {
 
     const timeoutMs = (duration + 40) * 1000;
     await Promise.race([
-      donePromise,
+      donePromise.then(() => {
+        try {
+          if (child.connected) child.send('quit');
+        } catch {
+          // ignore
+        }
+      }),
       new Promise<never>((_, rej) =>
         setTimeout(() => rej(new Error(`Benchmark timed out after ${timeoutMs}ms`)), timeoutMs)
       ),

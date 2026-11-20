@@ -426,6 +426,9 @@ export function createBenchWorld(seed = 42): SimState {
     });
   }
 
+  // Pre-sort lexicographically by id so sortedIds() hits zero-allocation fast path every tick
+  state.shades.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  state.motes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   state.nextShadeSeq = 201;
   state.nextMoteSeq = 101;
   state.benchMode = true;
