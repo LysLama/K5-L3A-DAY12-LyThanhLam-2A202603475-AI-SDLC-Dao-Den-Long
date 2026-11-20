@@ -131,6 +131,13 @@ export class HudController {
   private settingsOpen = false;
   private settingsFromMenu = false;
   private readonly projVec = new THREE.Vector3();
+  private readonly lastHtmlCache = new Map<HTMLElement, string>();
+
+  private setHtmlIfChanged(el: HTMLElement, html: string): void {
+    if (this.lastHtmlCache.get(el) === html) return;
+    this.lastHtmlCache.set(el, html);
+    el.innerHTML = html;
+  }
 
   constructor(initialSettings: GameSettings, cb: HudCallbacks) {
     document.getElementById('menu-emblem')!.innerHTML = svgLantern(true);
@@ -237,7 +244,7 @@ export class HudController {
     this.muteBtn.innerHTML = `${svgSound(muted)}<span>${muted ? 'Tắt [M]' : 'Âm [M]'}</span>`;
   }
 
-  showScreen(screen: UiScreen, night: NightId): void {
+  showScreen(screen: UiScreen, night: NightId, fpsAvg = 60): void {
     this.screenMenu.classList.toggle('hidden', screen !== 'menu');
     this.screenIntro.classList.toggle('hidden', screen !== 'intro');
     this.screenPause.classList.toggle('hidden', screen !== 'paused');
@@ -261,7 +268,7 @@ export class HudController {
       this.settingsFromMenu = false;
       const mapCfg = getMapConfig(night);
       this.pauseTitleEl.textContent = 'Đang Tạm Dừng';
-      this.pauseSubEl.textContent = `Đêm ${night} · ${mapCfg.name} vẫn lặng lẽ đợi ánh lửa từ bạn.`;
+      this.pauseSubEl.textContent = `Đêm ${night} · ${mapCfg.name} (${Math.round(fpsAvg)} FPS) vẫn lặng lẽ đợi ánh lửa từ bạn.`;
       this.pauseSettingsPanel.classList.toggle('hidden', !this.settingsOpen);
       this.pauseResumeBtn.textContent = 'Tiếp tục [Esc / P]';
       this.pauseRestartBtn.classList.remove('hidden');
@@ -372,13 +379,13 @@ export class HudController {
     for (let i = 0; i < TUNING.flames; i++) {
       flamesHtml += svgFlame(i < state.player.flames);
     }
-    this.flamesEl.innerHTML = flamesHtml;
+    this.setHtmlIfChanged(this.flamesEl, flamesHtml);
 
     // Bùa Gió badge
     if (state.player.charmTicks > 0) {
       const charmSecs = (state.player.charmTicks * DT).toFixed(1);
       this.charmBadgeEl.classList.remove('hidden');
-      this.charmBadgeEl.innerHTML = `${svgDash()}<span>Bùa Gió · ${charmSecs}s</span>`;
+      this.setHtmlIfChanged(this.charmBadgeEl, `${svgDash()}<span>Bùa Gió · ${charmSecs}s</span>`);
     } else {
       this.charmBadgeEl.classList.add('hidden');
     }
@@ -387,9 +394,12 @@ export class HudController {
     if (state.wind.enabled && (state.wind.warning || state.wind.active)) {
       this.windBadgeEl.classList.remove('hidden');
       this.windBadgeEl.classList.toggle('is-active', state.wind.active);
-      this.windBadgeEl.innerHTML = state.wind.active
-        ? `${svgWind()}<span>GIÓ MẠNH đang thổi!</span>`
-        : `${svgWind()}<span>Cảnh báo: Gió lớn sắp nổi!</span>`;
+      this.setHtmlIfChanged(
+        this.windBadgeEl,
+        state.wind.active
+          ? `${svgWind()}<span>GIÓ MẠNH đang thổi!</span>`
+          : `${svgWind()}<span>Cảnh báo: Gió lớn sắp nổi!</span>`
+      );
     } else {
       this.windBadgeEl.classList.add('hidden');
     }
@@ -400,7 +410,7 @@ export class HudController {
       slotsHtml += `<span class="slot-pip ${i < state.player.carried ? 'is-filled' : ''}"></span>`;
     }
     slotsHtml += `</span><span>${state.player.carried}/${TUNING.carry_capacity}</span>`;
-    this.carriedEl.innerHTML = slotsHtml;
+    this.setHtmlIfChanged(this.carriedEl, slotsHtml);
 
     // Lanterns
     let litCount = 0;
@@ -410,28 +420,34 @@ export class HudController {
       lanternsHtml += svgLantern(l.lit);
     }
     lanternsHtml += `<span class="hud-lantern-count">${litCount}/${state.lanterns.length}</span>`;
-    this.lanternsEl.innerHTML = lanternsHtml;
+    this.setHtmlIfChanged(this.lanternsEl, lanternsHtml);
 
     // Timer & Score (blinking red #FF5A5F when <= 30s)
     const secs = Math.max(0, Math.ceil(state.timeLeftS));
     const mm = String(Math.floor(secs / 60)).padStart(2, '0');
     const ss = String(secs % 60).padStart(2, '0');
-    this.timerEl.innerHTML = `${svgClock()}<span>${mm}:${ss}</span>`;
+    this.setHtmlIfChanged(this.timerEl, `${svgClock()}<span>${mm}:${ss}</span>`);
     this.timerEl.classList.toggle('is-urgent', secs <= 30 && state.status === 'playing');
-    this.scoreEl.innerHTML = `<span>Điểm</span><span class="hud-score-val">${state.score}</span>`;
+    this.setHtmlIfChanged(
+      this.scoreEl,
+      `<span>Điểm</span><span class="hud-score-val">${state.score}</span>`
+    );
 
     // Dash Cooldown Ability Pill
     const dashCdS = state.player.dashCdTicks * DT;
     if (state.player.charmTicks > 0) {
       this.dashEl.className = 'pill ability-pill is-ready';
-      this.dashEl.innerHTML = `${svgDash()}<span>Lướt [Shift] · ∞</span>`;
+      this.setHtmlIfChanged(this.dashEl, `${svgDash()}<span>Lướt [Shift] · ∞</span>`);
     } else if (dashCdS > 0) {
       const ratio = Math.min(1, Math.max(0, (TUNING.dash_cooldown_s - dashCdS) / TUNING.dash_cooldown_s)).toFixed(3);
       this.dashEl.className = 'pill ability-pill is-wait';
-      this.dashEl.innerHTML = `${svgDash()}<span>Lướt ${dashCdS.toFixed(1)}s</span><span class="ability-progress"><span class="ability-progress-fill" style="transform:scaleX(${ratio})"></span></span>`;
+      this.setHtmlIfChanged(
+        this.dashEl,
+        `${svgDash()}<span>Lướt ${dashCdS.toFixed(1)}s</span><span class="ability-progress"><span class="ability-progress-fill" style="transform:scaleX(${ratio})"></span></span>`
+      );
     } else {
       this.dashEl.className = 'pill ability-pill is-ready';
-      this.dashEl.innerHTML = `${svgDash()}<span>Lướt [Shift]</span>`;
+      this.setHtmlIfChanged(this.dashEl, `${svgDash()}<span>Lướt [Shift]</span>`);
     }
 
     // Pulse Cooldown Ability Pill
@@ -439,13 +455,16 @@ export class HudController {
     if (pulseCdS > 0) {
       const ratio = Math.min(1, Math.max(0, (TUNING.pulse_cooldown_s - pulseCdS) / TUNING.pulse_cooldown_s)).toFixed(3);
       this.pulseEl.className = 'pill ability-pill is-wait';
-      this.pulseEl.innerHTML = `${svgPulse()}<span>Tỏa Sáng ${pulseCdS.toFixed(1)}s</span><span class="ability-progress"><span class="ability-progress-fill" style="transform:scaleX(${ratio})"></span></span>`;
+      this.setHtmlIfChanged(
+        this.pulseEl,
+        `${svgPulse()}<span>Tỏa Sáng ${pulseCdS.toFixed(1)}s</span><span class="ability-progress"><span class="ability-progress-fill" style="transform:scaleX(${ratio})"></span></span>`
+      );
     } else if (state.player.carried < TUNING.pulse_cost) {
       this.pulseEl.className = 'pill ability-pill is-wait';
-      this.pulseEl.innerHTML = `${svgPulse()}<span>Cần ${TUNING.pulse_cost} đom đóm</span>`;
+      this.setHtmlIfChanged(this.pulseEl, `${svgPulse()}<span>Cần ${TUNING.pulse_cost} đom đóm</span>`);
     } else {
       this.pulseEl.className = 'pill ability-pill is-ready';
-      this.pulseEl.innerHTML = `${svgPulse()}<span>Tỏa Sáng [Q / RMB]</span>`;
+      this.setHtmlIfChanged(this.pulseEl, `${svgPulse()}<span>Tỏa Sáng [Q / RMB]</span>`);
     }
 
     // Contextual interact prompt: "E — Nạp ánh sáng (x/10)"

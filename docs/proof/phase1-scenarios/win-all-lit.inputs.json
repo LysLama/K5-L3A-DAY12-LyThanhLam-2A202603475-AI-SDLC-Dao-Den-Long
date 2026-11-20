@@ -1,11 +1,11 @@
 {
   "frames": [
     { "tick": 0, "move": [0, 1], "cam_yaw_deg": 0 },
-    { "tick": 55, "pulse": true },
-    { "tick": 56, "pulse": false },
-    { "tick": 85, "interact": true },
-    { "tick": 86, "interact": false },
-    { "tick": 170, "interact": true },
-    { "tick": 171, "interact": false }
+    { "tick": 64, "pulse": true },
+    { "tick": 65, "pulse": false },
+    { "tick": 128, "interact": true },
+    { "tick": 129, "interact": false },
+    { "tick": 175, "interact": true },
+    { "tick": 176, "interact": false }
   ]
 }

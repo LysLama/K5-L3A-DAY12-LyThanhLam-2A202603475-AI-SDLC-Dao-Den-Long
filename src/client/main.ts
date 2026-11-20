@@ -79,7 +79,7 @@ class GameApp {
   private prevWindActive = false;
   private lastCountdownSec = -1;
 
-  private fpsSamples: number[] = [];
+  private dtSamples: number[] = [];
   private fpsAvg = 60;
 
   private readonly onKeyDown: (e: KeyboardEvent) => void;
@@ -279,6 +279,8 @@ class GameApp {
     this.prevWindWarning = false;
     this.prevWindActive = false;
     this.lastCountdownSec = -1;
+    this.dtSamples = [];
+    this.fpsAvg = 60;
 
     this.worldScene.dispose();
     this.state = createWorld(SEED_BASE + this.runCount + night * 97, undefined, night);
@@ -319,12 +321,12 @@ class GameApp {
       stepTick(this.state, mapKeysToInput(new Set(), this.camRig.yawDeg, false, false));
       this.screen = 'paused';
       this.pressedKeys.clear();
-      this.hud.showScreen('paused', this.currentNight);
+      this.hud.showScreen('paused', this.currentNight, this.fpsAvg);
     } else if (this.state.status === 'paused') {
       stepTick(this.state, mapKeysToInput(new Set(), this.camRig.yawDeg, false, true));
       this.screen = 'playing';
       this.lastTimestamp = performance.now();
-      this.hud.showScreen('playing', this.currentNight);
+      this.hud.showScreen('playing', this.currentNight, this.fpsAvg);
     }
   }
 
@@ -347,17 +349,19 @@ class GameApp {
       const frameDt = Math.min(0.1, rawDt);
       this.lastTimestamp = now;
 
-      // Rolling FPS average over latest 45 frames
-      const instFps = 1 / rawDt;
-      this.fpsSamples.push(instFps);
-      if (this.fpsSamples.length > 45) this.fpsSamples.shift();
-      this.fpsAvg = this.fpsSamples.reduce((a, b) => a + b, 0) / this.fpsSamples.length;
-
       let tickEvents: SimEvent[] = [];
       let simDt = 0;
       const liveInput = mapKeysToInput(this.pressedKeys, this.camRig.yawDeg, false, false);
       const isPlaying = this.screen === 'playing' && this.state.status === 'playing';
       const isMovingInput = isPlaying && (liveInput.move[0] !== 0 || liveInput.move[1] !== 0);
+
+      // True windowed average FPS = frameCount / totalFrameTime (only steady playing frames)
+      if (isPlaying && rawDt <= 0.15 && this.state.simTick > 10) {
+        this.dtSamples.push(rawDt);
+        if (this.dtSamples.length > 60) this.dtSamples.shift();
+        const totalDt = this.dtSamples.reduce((a, b) => a + b, 0);
+        if (totalDt > 0) this.fpsAvg = this.dtSamples.length / totalDt;
+      }
 
       if (isPlaying) {
         simDt = frameDt;
