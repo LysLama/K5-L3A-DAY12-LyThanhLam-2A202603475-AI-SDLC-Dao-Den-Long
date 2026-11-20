@@ -7,9 +7,10 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { DT } from '../sim/constants';
 import { getMapConfig } from '../sim/maps';
 import { stepTick } from '../sim/step';
-import type { NightId, SimEvent, SimState, Vec3 } from '../sim/types';
-import { createWorld } from '../sim/world';
+import type { InputState, NightId, SimEvent, SimState, Vec3 } from '../sim/types';
+import { createBenchWorld, createWorld } from '../sim/world';
 import { Soundscape } from './audio';
+import { computeBenchCameraPosition } from './benchOrbit';
 import { ThirdPersonCamera } from './camera';
 import { type GameSettings, HudController, type UiScreen } from './hud';
 import { mapKeysToInput } from './inputMapper';
@@ -83,6 +84,14 @@ class GameApp {
   private dtSamples: number[] = [];
   private fpsAvg = 60;
 
+  private readonly benchConfig: { active: boolean; seed: number; durationS: number };
+  private benchReadySent = false;
+  private benchSubmitted = false;
+  private benchStartPerfMs = 0;
+  private benchMeasureStartMs = 0;
+  private benchPrevFrameMs = 0;
+  private readonly benchDtsMs: number[] = [];
+
   private readonly onKeyDown: (e: KeyboardEvent) => void;
   private readonly onKeyUp: (e: KeyboardEvent) => void;
   private readonly onContextMenu: (e: MouseEvent) => void;
@@ -90,6 +99,13 @@ class GameApp {
   private readonly onBlur: () => void;
 
   constructor(private readonly mountEl: HTMLElement) {
+    const params = new URLSearchParams(window.location.search);
+    this.benchConfig = {
+      active: params.get('bench') === '1',
+      seed: Number.parseInt(params.get('seed') ?? '42', 10) || 42,
+      durationS: Math.max(1, Number.parseFloat(params.get('duration') ?? '30') || 30)
+    };
+
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -108,7 +124,9 @@ class GameApp {
     this.audio.setVolume(this.settings.volume / 100);
     this.camRig.setSensitivity(this.settings.sensitivity / 100);
 
-    this.state = createWorld(SEED_BASE, undefined, 1);
+    this.state = this.benchConfig.active
+      ? createBenchWorld(this.benchConfig.seed)
+      : createWorld(SEED_BASE, undefined, 1);
     const mapCfg = getMapConfig(1);
     this.camRig.reset(mapCfg.spawnPos, mapCfg.spawnFacing);
     this.prevPlayerPos = [...this.state.player.pos];
@@ -168,9 +186,11 @@ class GameApp {
       }
     });
 
-    this.hud.showScreen('menu', 1);
+    this.screen = this.benchConfig.active ? 'bench' : 'menu';
+    this.hud.showScreen(this.screen, 1);
 
     this.onKeyDown = (e: KeyboardEvent) => {
+      if (this.benchConfig.active) return;
       this.audio.unlock();
       if (e.repeat && ['KeyP', 'Escape', 'KeyM', 'KeyH', 'Enter'].includes(e.code)) return;
       if (e.code === 'KeyP' || e.code === 'Escape') {
@@ -379,13 +399,119 @@ class GameApp {
     }
   }
 
+  private getWebglRendererDesc(): string {
+    try {
+      const gl = this.renderer.getContext();
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      const gpu = dbg
+        ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL))
+        : String(gl.getParameter(gl.RENDERER));
+      return `Three.js 0.187.0 (${gpu})`;
+    } catch {
+      return 'Three.js 0.187.0 (WebGL2)';
+    }
+  }
+
+  private submitBenchResults(): void {
+    this.benchSubmitted = true;
+    const sumDt = this.benchDtsMs.reduce((a, b) => a + b, 0);
+    const avgFps = sumDt > 0 ? (1000 * this.benchDtsMs.length) / sumDt : 0;
+    const payload = {
+      dtsMs: this.benchDtsMs,
+      vsyncOff: avgFps > 64 || navigator.userAgent.includes('Electron'),
+      renderer: this.getWebglRendererDesc()
+    };
+    void fetch('/api/bench-done', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .catch(() => {})
+      .finally(() => {
+        (window as unknown as { __ddlBenchDone?: boolean }).__ddlBenchDone = true;
+      });
+  }
+
   private startLoop(): void {
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     this.lastTimestamp = performance.now();
+    const neutralBenchInput: InputState = {
+      move: [0, 0],
+      cam_yaw_deg: 0,
+      jump: false,
+      interact: false,
+      pulse: false,
+      dash: false,
+      pause: false
+    };
+
     const tickFrame = (now: number) => {
       const rawDt = Math.max(0.0001, (now - this.lastTimestamp) / 1000);
       const frameDt = Math.min(0.1, rawDt);
       this.lastTimestamp = now;
+
+      if (this.benchConfig.active) {
+        if (!this.benchReadySent) {
+          this.benchStartPerfMs = now;
+        }
+        const benchElapsedSec = (now - this.benchStartPerfMs) / 1000;
+        this.elapsedSec = benchElapsedSec;
+        this.accumulator = Math.min(this.accumulator + frameDt, DT * 4);
+        while (this.accumulator >= DT) {
+          this.prevPlayerPos = [0, 0, 0];
+          this.snapshotPrevActors();
+          stepTick(this.state, neutralBenchInput);
+          this.accumulator -= DT;
+        }
+
+        const [bx, by, bz] = computeBenchCameraPosition(benchElapsedSec);
+        this.camera.position.set(bx, by, bz);
+        this.camera.lookAt(0, 0, 0);
+
+        const alpha = this.accumulator / DT;
+        this.worldScene.sync(this.state, [], {
+          alpha,
+          simDt: frameDt,
+          frameDt,
+          elapsedSec: this.elapsedSec,
+          isMovingInput: false,
+          colorblind: false,
+          cameraPos: [bx, by, bz],
+          prevPlayerPos: this.prevPlayerPos,
+          prevShadePositions: this.prevShadePositions,
+          prevDrifterPositions: this.prevDrifterPositions
+        });
+
+        if (this.composer) {
+          this.composer.render();
+        } else {
+          this.renderer.render(this.worldScene.scene, this.camera);
+        }
+
+        if (!this.benchReadySent) {
+          this.benchReadySent = true;
+          void fetch('/api/bench-ready', { method: 'POST' }).catch(() => {});
+        }
+
+        const elapsedMs = now - this.benchStartPerfMs;
+        if (elapsedMs >= 3000 && !this.benchSubmitted) {
+          if (this.benchMeasureStartMs === 0) {
+            this.benchMeasureStartMs = now;
+            this.benchPrevFrameMs = now;
+          } else {
+            this.benchDtsMs.push(Math.max(0.05, now - this.benchPrevFrameMs));
+            this.benchPrevFrameMs = now;
+            if (now - this.benchMeasureStartMs >= this.benchConfig.durationS * 1000) {
+              this.submitBenchResults();
+            }
+          }
+        }
+
+        if (!this.benchSubmitted) {
+          this.rafId = requestAnimationFrame(tickFrame);
+        }
+        return;
+      }
 
       let tickEvents: SimEvent[] = [];
       let simDt = 0;

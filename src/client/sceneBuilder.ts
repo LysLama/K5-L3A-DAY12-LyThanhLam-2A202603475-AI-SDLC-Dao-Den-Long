@@ -25,15 +25,9 @@ interface LanternVisual {
   orbitMotes: THREE.Mesh[];
 }
 
-interface ShadeVisual {
-  group: THREE.Group;
-  bodyMat: THREE.MeshStandardMaterial;
-  eyeMat: THREE.MeshBasicMaterial;
-  wisps: THREE.Mesh[];
-  stunStarsGroup: THREE.Group;
-  drainBeam: THREE.Mesh;
-  drainBeamMat: THREE.MeshBasicMaterial;
-}
+const MAX_INST_MOTES = 256;
+const MAX_INST_SHADES = 256;
+const MAX_INST_DRAIN_BEAMS = 64;
 
 interface DrifterVisual {
   group: THREE.Group;
@@ -80,9 +74,20 @@ export class IslandScene {
   private readonly disposableTextures: THREE.Texture[] = [];
   private readonly warmGlowTex: THREE.CanvasTexture;
 
-  private readonly moteCoreGeo = new THREE.SphereGeometry(0.16, 10, 8);
-  private readonly moteRandomMat = new THREE.MeshBasicMaterial({ color: PALETTE.moteGlow });
-  private readonly moteDroppedMat = new THREE.MeshBasicMaterial({ color: PALETTE.moteGold });
+  private readonly moteCoreInst: THREE.InstancedMesh;
+  private readonly moteHaloInst: THREE.InstancedMesh;
+  private readonly shadeBodyInst: THREE.InstancedMesh;
+  private readonly shadeHornInst: THREE.InstancedMesh;
+  private readonly shadeEyeInst: THREE.InstancedMesh;
+  private readonly shadeWispInst: THREE.InstancedMesh;
+  private readonly shadeStunStarInst: THREE.InstancedMesh;
+  private readonly shadeDrainBeamInst: THREE.InstancedMesh;
+
+  private readonly tmpDummy = new THREE.Object3D();
+  private readonly tmpLocal = new THREE.Object3D();
+  private readonly tmpParentMat = new THREE.Matrix4();
+  private readonly tmpChildMat = new THREE.Matrix4();
+  private readonly tmpColor = new THREE.Color();
 
   private readonly mayGroup = new THREE.Group();
   private readonly mayVisualPivot = new THREE.Group();
@@ -103,8 +108,6 @@ export class IslandScene {
   private bellPivot: THREE.Group | null = null;
 
   private readonly lanternVisuals = new Map<string, LanternVisual>();
-  private readonly moteVisuals = new Map<string, THREE.Group>();
-  private readonly shadeVisuals = new Map<string, ShadeVisual>();
   private readonly drifterVisuals = new Map<string, DrifterVisual>();
   private readonly charmVisuals = new Map<string, CharmVisual>();
 
@@ -139,6 +142,100 @@ export class IslandScene {
 
     this.buildEnvironmentForNight(this.night);
     this.buildSkyAndClouds();
+
+    const whiteColor = new THREE.Color(0xffffff);
+    const makeInst = (geo: THREE.BufferGeometry, mat: THREE.Material, cap: number, withColor: boolean) => {
+      const m = new THREE.InstancedMesh(geo, mat, cap);
+      m.count = 0;
+      m.frustumCulled = false;
+      if (withColor) m.setColorAt(0, whiteColor);
+      this.scene.add(m);
+      return m;
+    };
+
+    this.moteCoreInst = makeInst(
+      new THREE.SphereGeometry(0.16, 10, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffffff }),
+      MAX_INST_MOTES,
+      true
+    );
+    this.moteHaloInst = makeInst(
+      new THREE.PlaneGeometry(1.05, 1.05),
+      new THREE.MeshBasicMaterial({
+        map: this.warmGlowTex,
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      }),
+      MAX_INST_MOTES,
+      true
+    );
+
+    const phantomProfile = [
+      new THREE.Vector2(0.0, -0.78),
+      new THREE.Vector2(0.12, -0.58),
+      new THREE.Vector2(0.32, -0.32),
+      new THREE.Vector2(0.50, -0.02),
+      new THREE.Vector2(0.52, 0.25),
+      new THREE.Vector2(0.38, 0.50),
+      new THREE.Vector2(0.16, 0.66),
+      new THREE.Vector2(0.0, 0.72)
+    ];
+    this.shadeBodyInst = makeInst(
+      new THREE.LatheGeometry(phantomProfile, 16),
+      new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        emissive: '#220a44',
+        emissiveIntensity: 0.8,
+        roughness: 0.45
+      }),
+      MAX_INST_SHADES,
+      true
+    );
+    this.shadeHornInst = makeInst(
+      new THREE.ConeGeometry(0.14, 0.42, 7),
+      new THREE.MeshStandardMaterial({
+        color: PALETTE.shadeBody,
+        emissive: '#260b4d',
+        emissiveIntensity: 0.85,
+        roughness: 0.45
+      }),
+      MAX_INST_SHADES * 2,
+      false
+    );
+    this.shadeEyeInst = makeInst(
+      new THREE.SphereGeometry(0.08, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffffff }),
+      MAX_INST_SHADES * 2,
+      true
+    );
+    this.shadeWispInst = makeInst(
+      new THREE.ConeGeometry(0.09, 0.36, 6),
+      new THREE.MeshStandardMaterial({
+        color: PALETTE.shadeBody,
+        emissive: '#260b4d',
+        emissiveIntensity: 0.85,
+        roughness: 0.45
+      }),
+      MAX_INST_SHADES * 3,
+      false
+    );
+    this.shadeStunStarInst = makeInst(
+      new THREE.OctahedronGeometry(0.11, 0),
+      new THREE.MeshBasicMaterial({ color: PALETTE.moteGold }),
+      MAX_INST_SHADES * 3,
+      false
+    );
+    const beamGeo = new THREE.CylinderGeometry(0.055, 0.13, 1, 8);
+    beamGeo.rotateX(Math.PI / 2);
+    this.shadeDrainBeamInst = makeInst(
+      beamGeo,
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.68 }),
+      MAX_INST_DRAIN_BEAMS,
+      true
+    );
 
     const mayParts = this.buildMayCharacter();
     this.mayBodyMat = mayParts.bodyMat;
@@ -1101,119 +1198,6 @@ export class IslandScene {
     this.scene.add(group);
   }
 
-  private createMoteVisual(id: string, kind: 'random' | 'dropped'): THREE.Group {
-    const group = new THREE.Group();
-    const core = new THREE.Mesh(
-      this.moteCoreGeo,
-      kind === 'dropped' ? this.moteDroppedMat : this.moteRandomMat
-    );
-    const halo = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: this.warmGlowTex,
-        color: kind === 'dropped' ? PALETTE.goldUi : PALETTE.moteGold,
-        transparent: true,
-        opacity: 0.85,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-      })
-    );
-    halo.scale.set(1.05, 1.05, 1);
-    group.add(core, halo);
-    this.moteVisuals.set(id, group);
-    this.scene.add(group);
-    return group;
-  }
-
-  private createShadeVisual(id: string): ShadeVisual {
-    const group = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({
-      color: PALETTE.shadeBody,
-      emissive: '#260b4d',
-      emissiveIntensity: 0.85,
-      roughness: 0.45
-    });
-
-    const phantomProfile = [
-      new THREE.Vector2(0.0, -0.78),
-      new THREE.Vector2(0.12, -0.58),
-      new THREE.Vector2(0.32, -0.32),
-      new THREE.Vector2(0.50, -0.02),
-      new THREE.Vector2(0.52, 0.25),
-      new THREE.Vector2(0.38, 0.50),
-      new THREE.Vector2(0.16, 0.66),
-      new THREE.Vector2(0.0, 0.72)
-    ];
-    const body = new THREE.Mesh(new THREE.LatheGeometry(phantomProfile, 20), bodyMat);
-    group.add(body);
-
-    const hornGeo = new THREE.ConeGeometry(0.14, 0.42, 8);
-    const hornL = new THREE.Mesh(hornGeo, bodyMat);
-    hornL.position.set(-0.22, 0.65, -0.05);
-    hornL.rotation.set(-0.35, 0, 0.35);
-    const hornR = new THREE.Mesh(hornGeo, bodyMat);
-    hornR.position.set(0.22, 0.65, -0.05);
-    hornR.rotation.set(-0.35, 0, -0.35);
-    group.add(hornL, hornR);
-
-    const eyeMat = new THREE.MeshBasicMaterial({ color: PALETTE.shadeEye });
-    const eyeGeo = new THREE.SphereGeometry(0.08, 10, 8);
-    const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeL.position.set(-0.18, 0.22, 0.46);
-    eyeL.scale.set(1.25, 0.75, 0.65);
-    eyeL.rotation.z = -0.22;
-    const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeR.position.set(0.18, 0.22, 0.46);
-    eyeR.scale.set(1.25, 0.75, 0.65);
-    eyeR.rotation.z = 0.22;
-    group.add(eyeL, eyeR);
-
-    const wisps: THREE.Mesh[] = [];
-    const wispGeo = new THREE.ConeGeometry(0.09, 0.36, 7);
-    for (let i = 0; i < 3; i++) {
-      const w = new THREE.Mesh(wispGeo, bodyMat);
-      w.rotation.x = Math.PI;
-      group.add(w);
-      wisps.push(w);
-    }
-
-    const stunStarsGroup = new THREE.Group();
-    stunStarsGroup.position.y = 1.05;
-    const starGeo = new THREE.OctahedronGeometry(0.11, 0);
-    const starMat = new THREE.MeshBasicMaterial({ color: PALETTE.moteGold });
-    for (let i = 0; i < 3; i++) {
-      const a = (i / 3) * Math.PI * 2;
-      const star = new THREE.Mesh(starGeo, starMat);
-      star.position.set(Math.cos(a) * 0.52, 0, Math.sin(a) * 0.52);
-      stunStarsGroup.add(star);
-    }
-    stunStarsGroup.visible = false;
-    group.add(stunStarsGroup);
-
-    const beamGeo = new THREE.CylinderGeometry(0.055, 0.13, 1, 8);
-    beamGeo.rotateX(Math.PI / 2);
-    const drainBeamMat = new THREE.MeshBasicMaterial({
-      color: PALETTE.shadeEye,
-      transparent: true,
-      opacity: 0.72
-    });
-    const drainBeam = new THREE.Mesh(beamGeo, drainBeamMat);
-    drainBeam.visible = false;
-    this.scene.add(drainBeam);
-
-    const visual: ShadeVisual = {
-      group,
-      bodyMat,
-      eyeMat,
-      wisps,
-      stunStarsGroup,
-      drainBeam,
-      drainBeamMat
-    };
-    this.shadeVisuals.set(id, visual);
-    this.scene.add(group);
-    return visual;
-  }
-
   private createDrifterVisual(id: string): DrifterVisual {
     const group = new THREE.Group();
     // Steel-blue wind ribbon spirit (#8FA3B8)
@@ -1444,22 +1428,34 @@ export class IslandScene {
     this.hemiLight.intensity = computeAmbientIntensity(litCount, totalLanterns);
     this.dirLight.intensity = 0.55 + warmFactor * 0.4;
 
-    // 3. Sync Motes at proper elevation pos[1]
-    const activeMoteIds = new Set<string>();
-    for (const m of state.motes) {
-      activeMoteIds.add(m.id);
-      const vis = this.moteVisuals.get(m.id) ?? this.createMoteVisual(m.id, m.kind);
+    // 3. Sync Motes at proper elevation pos[1] via GPU InstancedMesh
+    const camX = opts.cameraPos?.[0] ?? 0;
+    const camY = opts.cameraPos?.[1] ?? 10;
+    const camZ = opts.cameraPos?.[2] ?? 14;
+    const moteCount = Math.min(state.motes.length, MAX_INST_MOTES);
+    for (let i = 0; i < moteCount; i++) {
+      const m = state.motes[i];
       const bob = m.pos[1] + 0.65 + Math.sin(elapsedSec * 3.6 + m.pos[0] * 0.7) * 0.16;
-      vis.position.set(m.pos[0], bob, m.pos[2]);
+      this.tmpDummy.position.set(m.pos[0], bob, m.pos[2]);
+      this.tmpDummy.rotation.set(0, 0, 0);
+      this.tmpDummy.scale.setScalar(1);
+      this.tmpDummy.updateMatrix();
+      this.moteCoreInst.setMatrixAt(i, this.tmpDummy.matrix);
+      this.tmpColor.setHex(m.kind === 'dropped' ? PALETTE.moteGold : PALETTE.moteGlow);
+      this.moteCoreInst.setColorAt(i, this.tmpColor);
+
+      this.tmpDummy.lookAt(camX, camY, camZ);
+      this.tmpDummy.updateMatrix();
+      this.moteHaloInst.setMatrixAt(i, this.tmpDummy.matrix);
+      this.tmpColor.setHex(m.kind === 'dropped' ? PALETTE.goldUi : PALETTE.moteGold);
+      this.moteHaloInst.setColorAt(i, this.tmpColor);
     }
-    for (const [id, vis] of this.moteVisuals.entries()) {
-      if (!activeMoteIds.has(id)) {
-        this.scene.remove(vis);
-        const halo = vis.children[1] as THREE.Sprite | undefined;
-        halo?.material.dispose();
-        this.moteVisuals.delete(id);
-      }
-    }
+    this.moteCoreInst.count = moteCount;
+    this.moteHaloInst.count = moteCount;
+    this.moteCoreInst.instanceMatrix.needsUpdate = true;
+    this.moteHaloInst.instanceMatrix.needsUpdate = true;
+    if (this.moteCoreInst.instanceColor) this.moteCoreInst.instanceColor.needsUpdate = true;
+    if (this.moteHaloInst.instanceColor) this.moteHaloInst.instanceColor.needsUpdate = true;
 
     // 4. Sync Bùa Gió (Charms)
     for (const c of state.charms) {
@@ -1482,91 +1478,164 @@ export class IslandScene {
       jp.glowRing.scale.setScalar(0.95 + Math.sin(elapsedSec * 4 + idx) * 0.08);
     });
 
-    // 6. Sync Shades with interpolated positions & state visuals
-    const activeShadeIds = new Set<string>();
-    for (const s of state.shades) {
-      activeShadeIds.add(s.id);
-      const vis = this.shadeVisuals.get(s.id) ?? this.createShadeVisual(s.id);
+    // 6. Sync Shades via GPU InstancedMesh batches
+    const shadeCount = Math.min(state.shades.length, MAX_INST_SHADES);
+    let stunStarIdx = 0;
+    let drainBeamIdx = 0;
+    const activeEyeHex = colorblind ? PALETTE.shadeEyeCb : PALETTE.shadeEye;
+
+    for (let i = 0; i < shadeCount; i++) {
+      const s = state.shades[i];
       const prevShade = prevShadePositions.get(s.id) ?? s.pos;
-      const renderShadePos = interpolatePos(prevShade, s.pos, alpha);
+      const sx = prevShade[0] + (s.pos[0] - prevShade[0]) * alpha;
+      const sy = prevShade[1] + (s.pos[1] - prevShade[1]) * alpha;
+      const sz = prevShade[2] + (s.pos[2] - prevShade[2]) * alpha;
+
       const spawnScale =
         s.state === 'spawning' ? Math.max(0.25, 1 - s.stateTicksLeft / 30) : 1.0;
-      vis.group.scale.setScalar(spawnScale);
       const hover =
         s.state === 'stunned'
           ? -0.08
           : s.state === 'drain'
             ? 0.25 + Math.sin(elapsedSec * 9) * 0.12
             : Math.sin(elapsedSec * 4.5 + s.pos[0]) * 0.14;
-      vis.group.position.set(renderShadePos[0], renderShadePos[1] + 0.9 + hover, renderShadePos[2]);
 
       const drainTarget =
         s.state === 'drain' && s.targetLanternId
           ? state.lanterns.find((l) => l.id === s.targetLanternId)
           : undefined;
-      const lookTarget = drainTarget ? drainTarget.pos : renderPlayerPos;
-      vis.group.rotation.y = Math.atan2(
-        lookTarget[0] - renderShadePos[0],
-        lookTarget[2] - renderShadePos[2]
+      const lookX = drainTarget ? drainTarget.pos[0] : renderPlayerPos[0];
+      const lookZ = drainTarget ? drainTarget.pos[2] : renderPlayerPos[2];
+
+      this.tmpDummy.position.set(sx, sy + 0.9 + hover, sz);
+      this.tmpDummy.rotation.set(s.state === 'drain' ? 0.28 : 0, Math.atan2(lookX - sx, lookZ - sz), 0);
+      this.tmpDummy.scale.setScalar(spawnScale);
+      this.tmpDummy.updateMatrix();
+      this.tmpParentMat.copy(this.tmpDummy.matrix);
+
+      // Body instance + state color
+      this.shadeBodyInst.setMatrixAt(i, this.tmpParentMat);
+      this.tmpColor.setHex(
+        s.state === 'stunned'
+          ? PALETTE.shadeStun
+          : s.state === 'drain'
+            ? colorblind
+              ? 0x0b395c
+              : 0x35145c
+            : PALETTE.shadeBody
       );
-      vis.group.rotation.x = s.state === 'drain' ? 0.28 : 0;
+      this.shadeBodyInst.setColorAt(i, this.tmpColor);
 
-      vis.wisps.forEach((w, idx) => {
-        const a = elapsedSec * (s.state === 'stunned' ? 0.8 : 3.0) + (idx / 3) * Math.PI * 2;
-        const r = s.state === 'stunned' ? 0.3 : 0.42;
-        w.position.set(Math.cos(a) * r, -0.52 + Math.sin(elapsedSec * 4 + idx) * 0.1, Math.sin(a) * r);
-      });
+      // Left & right horns
+      this.tmpLocal.position.set(-0.22, 0.65, -0.05);
+      this.tmpLocal.rotation.set(-0.35, 0, 0.35);
+      this.tmpLocal.scale.set(1, 1, 1);
+      this.tmpLocal.updateMatrix();
+      this.tmpChildMat.multiplyMatrices(this.tmpParentMat, this.tmpLocal.matrix);
+      this.shadeHornInst.setMatrixAt(i * 2, this.tmpChildMat);
 
-      const activeEyeHex = colorblind ? PALETTE.shadeEyeCb : PALETTE.shadeEye;
-      const activeEmissiveHex = colorblind ? '#004870' : '#2b0d4d';
-      if (s.state === 'drain' && drainTarget) {
-        const sx = renderShadePos[0];
-        const sy = renderShadePos[1] + 0.95 + hover;
-        const sz = renderShadePos[2];
+      this.tmpLocal.position.set(0.22, 0.65, -0.05);
+      this.tmpLocal.rotation.set(-0.35, 0, -0.35);
+      this.tmpLocal.updateMatrix();
+      this.tmpChildMat.multiplyMatrices(this.tmpParentMat, this.tmpLocal.matrix);
+      this.shadeHornInst.setMatrixAt(i * 2 + 1, this.tmpChildMat);
+
+      // Left & right eyes + state color
+      const eyeHex =
+        s.state === 'stunned'
+          ? PALETTE.moteGold
+          : s.state === 'recoil'
+            ? PALETTE.drifterSteel
+            : activeEyeHex;
+      this.tmpColor.setHex(eyeHex);
+
+      this.tmpLocal.position.set(-0.18, 0.22, 0.46);
+      this.tmpLocal.rotation.set(0, 0, -0.22);
+      this.tmpLocal.scale.set(1.25, 0.75, 0.65);
+      this.tmpLocal.updateMatrix();
+      this.tmpChildMat.multiplyMatrices(this.tmpParentMat, this.tmpLocal.matrix);
+      this.shadeEyeInst.setMatrixAt(i * 2, this.tmpChildMat);
+      this.shadeEyeInst.setColorAt(i * 2, this.tmpColor);
+
+      this.tmpLocal.position.set(0.18, 0.22, 0.46);
+      this.tmpLocal.rotation.set(0, 0, 0.22);
+      this.tmpLocal.updateMatrix();
+      this.tmpChildMat.multiplyMatrices(this.tmpParentMat, this.tmpLocal.matrix);
+      this.shadeEyeInst.setMatrixAt(i * 2 + 1, this.tmpChildMat);
+      this.shadeEyeInst.setColorAt(i * 2 + 1, this.tmpColor);
+
+      // 3 trailing wisps
+      const wispRate = s.state === 'stunned' ? 0.8 : 3.0;
+      const wispR = s.state === 'stunned' ? 0.3 : 0.42;
+      this.tmpLocal.rotation.set(Math.PI, 0, 0);
+      this.tmpLocal.scale.set(1, 1, 1);
+      for (let w = 0; w < 3; w++) {
+        const wa = elapsedSec * wispRate + (w / 3) * Math.PI * 2;
+        this.tmpLocal.position.set(
+          Math.cos(wa) * wispR,
+          -0.52 + Math.sin(elapsedSec * 4 + w) * 0.1,
+          Math.sin(wa) * wispR
+        );
+        this.tmpLocal.updateMatrix();
+        this.tmpChildMat.multiplyMatrices(this.tmpParentMat, this.tmpLocal.matrix);
+        this.shadeWispInst.setMatrixAt(i * 3 + w, this.tmpChildMat);
+      }
+
+      // Stun stars (only emitted when stunned)
+      if (s.state === 'stunned' && stunStarIdx + 3 <= MAX_INST_SHADES * 3) {
+        const starBaseY = sy + 0.9 + hover + 1.05 * spawnScale;
+        const spin = elapsedSec * 5;
+        this.tmpLocal.rotation.set(0, spin, 0);
+        this.tmpLocal.scale.setScalar(spawnScale);
+        for (let k = 0; k < 3; k++) {
+          const sa = spin + (k / 3) * Math.PI * 2;
+          this.tmpLocal.position.set(
+            sx + Math.cos(sa) * 0.52 * spawnScale,
+            starBaseY,
+            sz + Math.sin(sa) * 0.52 * spawnScale
+          );
+          this.tmpLocal.updateMatrix();
+          this.shadeStunStarInst.setMatrixAt(stunStarIdx++, this.tmpLocal.matrix);
+        }
+      }
+
+      // Drain beam (only emitted when draining a weak lit lantern)
+      if (s.state === 'drain' && drainTarget && drainBeamIdx < MAX_INST_DRAIN_BEAMS) {
+        const bsy = sy + 0.95 + hover;
         const tx = drainTarget.pos[0];
         const ty = drainTarget.pos[1] + 3.25;
         const tz = drainTarget.pos[2];
-        const dist = Math.hypot(tx - sx, ty - sy, tz - sz);
-        vis.drainBeam.visible = dist > 0.05;
-        if (vis.drainBeam.visible) {
-          vis.drainBeam.position.set((sx + tx) * 0.5, (sy + ty) * 0.5, (sz + tz) * 0.5);
-          vis.drainBeam.lookAt(tx, ty, tz);
+        const dist = Math.hypot(tx - sx, ty - bsy, tz - sz);
+        if (dist > 0.05) {
+          this.tmpDummy.position.set((sx + tx) * 0.5, (bsy + ty) * 0.5, (sz + tz) * 0.5);
+          this.tmpDummy.lookAt(tx, ty, tz);
           const pulse = 1 + Math.sin(elapsedSec * 14) * 0.22;
-          vis.drainBeam.scale.set(pulse, pulse, dist);
-          vis.drainBeamMat.color.setHex(activeEyeHex);
-          vis.drainBeamMat.opacity = 0.48 + 0.28 * Math.sin(elapsedSec * 12);
+          this.tmpDummy.scale.set(pulse, pulse, dist);
+          this.tmpDummy.updateMatrix();
+          this.shadeDrainBeamInst.setMatrixAt(drainBeamIdx, this.tmpDummy.matrix);
+          this.tmpColor.setHex(activeEyeHex);
+          this.shadeDrainBeamInst.setColorAt(drainBeamIdx, this.tmpColor);
+          drainBeamIdx += 1;
         }
-      } else {
-        vis.drainBeam.visible = false;
       }
+    }
 
-      if (s.state === 'stunned') {
-        vis.bodyMat.color.setHex(PALETTE.shadeStun);
-        vis.bodyMat.emissive.set('#4c3c18');
-        vis.eyeMat.color.setHex(PALETTE.moteGold);
-        vis.stunStarsGroup.visible = true;
-        vis.stunStarsGroup.rotation.y = elapsedSec * 5;
-      } else if (s.state === 'recoil') {
-        vis.bodyMat.color.setHex(PALETTE.shadeBody);
-        vis.bodyMat.emissive.set(colorblind ? '#003a5c' : '#4c1d7a');
-        vis.eyeMat.color.setHex(PALETTE.drifterSteel);
-        vis.stunStarsGroup.visible = false;
-      } else {
-        vis.bodyMat.color.setHex(PALETTE.shadeBody);
-        vis.bodyMat.emissive.set(s.state === 'drain' ? (colorblind ? '#0074b8' : '#581c99') : activeEmissiveHex);
-        vis.eyeMat.color.setHex(activeEyeHex);
-        vis.stunStarsGroup.visible = false;
-      }
-    }
-    for (const [id, vis] of this.shadeVisuals.entries()) {
-      if (!activeShadeIds.has(id)) {
-        this.scene.remove(vis.group);
-        this.disposeObjectResources(vis.group);
-        this.scene.remove(vis.drainBeam);
-        this.disposeObjectResources(vis.drainBeam);
-        this.shadeVisuals.delete(id);
-      }
-    }
+    this.shadeBodyInst.count = shadeCount;
+    this.shadeHornInst.count = shadeCount * 2;
+    this.shadeEyeInst.count = shadeCount * 2;
+    this.shadeWispInst.count = shadeCount * 3;
+    this.shadeStunStarInst.count = stunStarIdx;
+    this.shadeDrainBeamInst.count = drainBeamIdx;
+
+    this.shadeBodyInst.instanceMatrix.needsUpdate = true;
+    this.shadeHornInst.instanceMatrix.needsUpdate = true;
+    this.shadeEyeInst.instanceMatrix.needsUpdate = true;
+    this.shadeWispInst.instanceMatrix.needsUpdate = true;
+    this.shadeStunStarInst.instanceMatrix.needsUpdate = true;
+    this.shadeDrainBeamInst.instanceMatrix.needsUpdate = true;
+    if (this.shadeBodyInst.instanceColor) this.shadeBodyInst.instanceColor.needsUpdate = true;
+    if (this.shadeEyeInst.instanceColor) this.shadeEyeInst.instanceColor.needsUpdate = true;
+    if (this.shadeDrainBeamInst.instanceColor) this.shadeDrainBeamInst.instanceColor.needsUpdate = true;
 
     // 7. Sync Gió Lạc (Drifters) with interpolated positions
     const activeDrifterIds = new Set<string>();
@@ -1712,9 +1781,6 @@ export class IslandScene {
     for (const tex of this.disposableTextures) {
       tex.dispose();
     }
-    this.moteCoreGeo.dispose();
-    this.moteRandomMat.dispose();
-    this.moteDroppedMat.dispose();
     this.disposeObjectResources(this.scene);
   }
 }

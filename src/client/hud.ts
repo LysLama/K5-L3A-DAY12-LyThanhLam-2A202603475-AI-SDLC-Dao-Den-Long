@@ -23,7 +23,7 @@ export interface GameSettings {
   colorblind: boolean;
 }
 
-export type UiScreen = 'menu' | 'intro' | 'playing' | 'paused' | 'result';
+export type UiScreen = 'menu' | 'intro' | 'playing' | 'paused' | 'result' | 'bench';
 
 interface NightLore {
   kicker: string;
@@ -260,7 +260,7 @@ export class HudController {
     this.screenIntro.classList.toggle('hidden', screen !== 'intro');
     this.screenPause.classList.toggle('hidden', screen !== 'paused');
     this.screenResult.classList.toggle('hidden', screen !== 'result');
-    this.hudLayer.classList.toggle('hidden', screen === 'menu' || screen === 'intro');
+    this.hudLayer.classList.toggle('hidden', screen === 'menu' || screen === 'intro' || screen === 'bench');
     if (screen !== 'playing') {
       this.arrowEl.classList.add('hidden');
     }

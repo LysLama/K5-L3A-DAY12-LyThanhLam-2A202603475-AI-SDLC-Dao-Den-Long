@@ -56,7 +56,6 @@ export function runSoak(options: SoakOptions): SoakOutput {
     try {
       state = createWorld(nightSeed, undefined, night);
       if (i === 0) {
-        options.onCleanup?.();
         memStartMb = Math.round(options.getRssMb());
       }
 
