@@ -51,10 +51,10 @@ export class IslandScene {
     this.fog = new THREE.FogExp2(this.darkFog.getHex(), 0.0145);
     this.scene.fog = this.fog;
 
-    this.hemiLight = new THREE.HemisphereLight('#7a6cb8', '#1d1633', 0.68);
+    this.hemiLight = new THREE.HemisphereLight('#9486d4', '#292047', 0.92);
     this.scene.add(this.hemiLight);
 
-    this.dirLight = new THREE.DirectionalLight('#b7a8ff', 0.65);
+    this.dirLight = new THREE.DirectionalLight('#cbbdff', 0.8);
     this.dirLight.position.set(18, 32, -16);
     this.scene.add(this.dirLight);
 
@@ -76,8 +76,8 @@ export class IslandScene {
     // Circular island deck top at Y = 0
     const topGeo = new THREE.CylinderGeometry(ISLAND_RADIUS, ISLAND_RADIUS * 0.94, 3.2, 64);
     const topMat = new THREE.MeshStandardMaterial({
-      color: '#25263d',
-      roughness: 0.92,
+      color: '#303152',
+      roughness: 0.9,
       metalness: 0.05
     });
     const islandMesh = new THREE.Mesh(topGeo, topMat);
@@ -179,24 +179,24 @@ export class IslandScene {
     nonLa.position.y = 1.48;
     this.mayGroup.add(nonLa);
 
-    // Small warm lantern hanging from the hat brim
-    this.mayLanternPivot.position.set(0.32, 1.32, 0.46);
+    // Small warm lantern hanging from the hat brim (visible from rear 3rd-person camera)
+    this.mayLanternPivot.position.set(-0.56, 1.32, 0.22);
     const cord = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.015, 0.015, 0.2, 6),
-      new THREE.MeshBasicMaterial({ color: '#8f6b42' })
+      new THREE.CylinderGeometry(0.015, 0.015, 0.24, 6),
+      new THREE.MeshBasicMaterial({ color: '#b58952' })
     );
-    cord.position.y = -0.1;
+    cord.position.y = -0.12;
     this.mayLanternPivot.add(cord);
 
     const miniLantern = new THREE.Mesh(
-      new THREE.SphereGeometry(0.12, 12, 10),
-      new THREE.MeshBasicMaterial({ color: '#ffae42' })
+      new THREE.SphereGeometry(0.14, 12, 10),
+      new THREE.MeshBasicMaterial({ color: '#ffbe52' })
     );
-    miniLantern.position.y = -0.22;
+    miniLantern.position.y = -0.26;
     this.mayLanternPivot.add(miniLantern);
 
-    const lanternLight = new THREE.PointLight('#ff9e3d', 2.4, 11, 1.6);
-    lanternLight.position.y = -0.22;
+    const lanternLight = new THREE.PointLight('#ff9e3d', 2.8, 12, 1.5);
+    lanternLight.position.y = -0.26;
     this.mayLanternPivot.add(lanternLight);
 
     this.mayGroup.add(this.mayLanternPivot);
@@ -217,10 +217,10 @@ export class IslandScene {
     group.add(pillar);
 
     const coreMat = new THREE.MeshStandardMaterial({
-      color: '#4f466e',
-      emissive: '#1e1633',
-      emissiveIntensity: 0.4,
-      roughness: 0.4
+      color: '#73659c',
+      emissive: '#3b2b66',
+      emissiveIntensity: 0.75,
+      roughness: 0.35
     });
     const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.52, 0), coreMat);
     core.position.y = 3.05;
@@ -378,9 +378,9 @@ export class IslandScene {
           (c.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.9;
         });
       } else {
-        vis.coreMat.color.set('#5e5480');
-        vis.coreMat.emissive.set('#ff9d3b');
-        vis.coreMat.emissiveIntensity = ratio * 0.85;
+        vis.coreMat.color.set('#73659c');
+        vis.coreMat.emissive.set(ratio > 0 ? '#ff9d3b' : '#4d3b82');
+        vis.coreMat.emissiveIntensity = 0.45 + ratio * 0.85;
         vis.flameMesh.visible = false;
         vis.light.intensity = ratio * 1.8;
         vis.safeRingMat.opacity = 0;
@@ -394,8 +394,8 @@ export class IslandScene {
     (this.scene.background as THREE.Color).lerpColors(this.darkBg, this.warmBg, warmFactor);
     this.fog.color.lerpColors(this.darkFog, this.warmFog, warmFactor);
     this.fog.density = 0.0155 - warmFactor * 0.0055;
-    this.hemiLight.intensity = 0.65 + warmFactor * 0.65;
-    this.dirLight.intensity = 0.6 + warmFactor * 0.55;
+    this.hemiLight.intensity = 0.88 + warmFactor * 0.55;
+    this.dirLight.intensity = 0.75 + warmFactor * 0.5;
 
     // 3. Sync Motes
     const activeMoteIds = new Set<string>();
