@@ -67,14 +67,23 @@ describe('sculpted multi-layer island terrain, grounding & safe clearance', () =
     // Night 3 Tier 1 & Tier 2 platforms keep exact sim elevation without extra lift
     expect(getVisualGroundLift(3, 0, 18, 3.0)).toBe(0);
     expect(getVisualGroundLift(3, 0, 4, 6.0)).toBe(0);
+    // Night 3 Shades (simY=0.7), Drifters (simY=1.5), and southern inner forest (z < 0, r < 25) DO receive terrain hill lift
+    const n3SouthLift = getVisualGroundLift(3, 6, -16, 0.7);
+    expect(n3SouthLift).toBeGreaterThan(0.15);
+    expect(getVisualGroundLift(3, 6, -16, 1.5)).toBeCloseTo(n3SouthLift, 5);
   });
 
-  it('rejects obstacles inside spawn, lantern daises, motes, paths, bridge, and Night 3 ramps', () => {
+  it('rejects obstacles inside spawn, lantern daises, motes, bridge, and Night 3 ramps while allowing forest across radial paths and Night 3 south basin', () => {
     expect(isClearPlayableSpot(1, 0, 40, 0, 0, 2.0)).toBe(false);
     expect(isClearPlayableSpot(1, 0, 40, 0, 25, 2.0)).toBe(false);
     expect(isClearPlayableSpot(1, 0, 40, 0, 12, 1.5)).toBe(false);
     expect(isClearPlayableSpot(2, 0, 28, 27, 0, 1.5)).toBe(false);
     expect(isClearPlayableSpot(3, 0, 45, 0, 28, 2.0)).toBe(false);
+
+    // Former straight path line (0, 18) between spawn and L1 (0, 25) is now open for forest growth
+    expect(isClearPlayableSpot(1, 0, 40, 0, 18, 0.25)).toBe(true);
+    // Night 3 inner southern basin (z < 0, r in 9..25) is now open for forest growth
+    expect(isClearPlayableSpot(3, 0, 45, 6, -16, 0.25)).toBe(true);
 
     const a = (54 * Math.PI) / 180;
     expect(isClearPlayableSpot(1, 0, 40, Math.cos(a) * 35.5, Math.sin(a) * 35.5, 1.2)).toBe(true);

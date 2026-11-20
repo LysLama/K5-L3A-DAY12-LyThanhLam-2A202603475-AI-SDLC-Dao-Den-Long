@@ -696,69 +696,71 @@ export function generateTropicalPlacementPlan(night: NightId): NightPlacementPla
   const treeSpecs: Spec[] =
     night === 1
       ? [
-          ['dipterocarpTrees', 52, 0.34, 0.9, 0.35, 1.0, 1.9, DIP, false, 1.7],
-          ['canopyTrees', 58, 0.3, 0.92, 0.35, 0.8, 1.6, CAN, false, 1.5],
-          ['coconutPalms', 40, 0.6, 0.95, 0.3, 0.8, 1.5, COC, true, 1.2],
-          ['mangroves', 34, 0.74, 0.96, 0.1, 0.85, 1.45, undefined, false, 1.1],
-          ['arecaPalms', 30, 0.32, 0.88, 0.35, 0.8, 1.45, ARE, false, 1.0],
-          ['bambooClumps', 62, 0.36, 0.95, -0.1, 0.8, 1.55, undefined, false, 0.9],
-          ['treeFerns', 52, 0.22, 0.94, -0.3, 0.75, 1.45, undefined, false, 0.8],
-          ['saplings', 84, 0.18, 0.95, -0.4, 0.5, 0.95, undefined, false, 0.65]
+          ['dipterocarpTrees', 56, 0.15, 0.91, 0.25, 1.0, 1.9, DIP, false, 1.65],
+          ['canopyTrees', 64, 0.14, 0.92, 0.25, 0.8, 1.6, CAN, false, 1.45],
+          ['coconutPalms', 42, 0.52, 0.95, 0.25, 0.8, 1.5, COC, true, 1.2],
+          ['mangroves', 36, 0.72, 0.96, 0.1, 0.85, 1.45, undefined, false, 1.1],
+          ['arecaPalms', 34, 0.14, 0.89, 0.25, 0.8, 1.45, ARE, false, 1.0],
+          ['bambooClumps', 68, 0.15, 0.95, -0.15, 0.8, 1.55, undefined, false, 0.9],
+          ['treeFerns', 56, 0.12, 0.94, -0.3, 0.75, 1.45, undefined, false, 0.8],
+          ['saplings', 90, 0.11, 0.95, -0.4, 0.5, 0.95, undefined, false, 0.65]
         ]
       : night === 2
         ? [
-            ['arecaPalms', 28, 0.4, 0.92, 0.3, 0.85, 1.5, ARE, false, 1.0],
-            ['dipterocarpTrees', 16, 0.44, 0.9, 0.3, 1.0, 1.75, DIP, false, 1.6],
-            ['canopyTrees', 20, 0.4, 0.9, 0.3, 0.8, 1.5, CAN, false, 1.4],
-            ['coconutPalms', 14, 0.64, 0.94, 0.3, 0.8, 1.4, COC, true, 1.2],
-            ['mangroves', 14, 0.72, 0.96, 0.1, 0.85, 1.4, undefined, false, 1.1],
-            ['bambooClumps', 26, 0.4, 0.94, -0.1, 0.8, 1.5, undefined, false, 0.9],
-            ['treeFerns', 22, 0.24, 0.93, -0.3, 0.75, 1.4, undefined, false, 0.8],
-            ['saplings', 34, 0.2, 0.94, -0.4, 0.5, 0.92, undefined, false, 0.65]
+            ['arecaPalms', 30, 0.16, 0.92, 0.25, 0.85, 1.5, ARE, false, 1.0],
+            ['dipterocarpTrees', 18, 0.18, 0.9, 0.25, 1.0, 1.75, DIP, false, 1.55],
+            ['canopyTrees', 22, 0.16, 0.9, 0.25, 0.8, 1.5, CAN, false, 1.4],
+            ['coconutPalms', 16, 0.56, 0.94, 0.25, 0.8, 1.4, COC, true, 1.2],
+            ['mangroves', 16, 0.7, 0.96, 0.1, 0.85, 1.4, undefined, false, 1.1],
+            ['bambooClumps', 28, 0.16, 0.94, -0.15, 0.8, 1.5, undefined, false, 0.9],
+            ['treeFerns', 24, 0.14, 0.93, -0.3, 0.75, 1.4, undefined, false, 0.8],
+            ['saplings', 38, 0.13, 0.94, -0.4, 0.5, 0.92, undefined, false, 0.65]
           ]
         : [
-            ['highlandTrees', 64, 0.58, 0.95, 0.3, 0.88, 1.7, HIG, false, 1.5],
-            ['dipterocarpTrees', 34, 0.58, 0.93, 0.35, 1.0, 1.9, DIP, false, 1.7],
-            ['canopyTrees', 36, 0.58, 0.92, 0.35, 0.8, 1.55, CAN, false, 1.5],
-            ['bambooClumps', 44, 0.58, 0.95, -0.1, 0.85, 1.55, undefined, false, 0.9],
-            ['treeFerns', 34, 0.58, 0.94, -0.3, 0.78, 1.45, undefined, false, 0.8],
-            ['saplings', 56, 0.58, 0.95, -0.4, 0.5, 0.95, undefined, false, 0.65]
+            ['highlandTrees', 88, 0.20, 0.95, 0.25, 0.88, 1.7, HIG, false, 1.45],
+            ['dipterocarpTrees', 48, 0.20, 0.93, 0.25, 1.0, 1.9, DIP, false, 1.65],
+            ['canopyTrees', 52, 0.20, 0.92, 0.25, 0.8, 1.55, CAN, false, 1.45],
+            ['arecaPalms', 24, 0.20, 0.91, 0.25, 0.82, 1.45, ARE, false, 1.05],
+            ['coconutPalms', 22, 0.68, 0.95, 0.25, 0.82, 1.45, COC, true, 1.2],
+            ['bambooClumps', 64, 0.20, 0.95, -0.15, 0.85, 1.55, undefined, false, 0.9],
+            ['treeFerns', 50, 0.20, 0.94, -0.3, 0.78, 1.45, undefined, false, 0.8],
+            ['saplings', 82, 0.19, 0.95, -0.4, 0.5, 0.95, undefined, false, 0.65]
           ];
   const underSpecs: Spec[] =
     night === 1
       ? [
-          ['bananaClumps', 70, 0.22, 0.93, -0.3, 0.78, 1.4],
-          ['pandanusShrubs', 60, 0.45, 0.95, -0.4, 0.72, 1.4],
-          ['mossLogs', 36, 0.28, 0.92, -0.2, 0.85, 1.4],
-          ['ferns', 150, 0.14, 0.95, -0.9, 0.8, 1.5],
-          ['boulders', 56, 0.22, 0.95, 0.3, 0.68, 1.7, undefined, false, 1.2],
-          ['pebbles', 100, 0.14, 0.95, -0.6, 0.7, 1.5],
-          ['grassSmall', 340, 0.14, 0.95, -1.3, 0.75, 1.55],
-          ['grassTall', 170, 0.24, 0.95, -0.9, 0.8, 1.5],
-          ['flowers', 130, 0.14, 0.94, -0.8, 0.8, 1.45]
+          ['bananaClumps', 74, 0.13, 0.93, -0.3, 0.78, 1.4],
+          ['pandanusShrubs', 64, 0.22, 0.95, -0.4, 0.72, 1.4],
+          ['mossLogs', 40, 0.15, 0.92, -0.2, 0.85, 1.4],
+          ['ferns', 160, 0.11, 0.95, -0.9, 0.8, 1.5],
+          ['boulders', 58, 0.15, 0.95, 0.25, 0.68, 1.7, undefined, false, 1.2],
+          ['pebbles', 105, 0.11, 0.95, -0.6, 0.7, 1.5],
+          ['grassSmall', 350, 0.11, 0.95, -1.3, 0.75, 1.55],
+          ['grassTall', 180, 0.14, 0.95, -0.9, 0.8, 1.5],
+          ['flowers', 135, 0.11, 0.94, -0.8, 0.8, 1.45]
         ]
       : night === 2
         ? [
-            ['bananaClumps', 30, 0.22, 0.93, -0.3, 0.8, 1.35],
-            ['pandanusShrubs', 26, 0.45, 0.95, -0.4, 0.75, 1.35],
-            ['mossLogs', 14, 0.28, 0.91, -0.2, 0.82, 1.3],
-            ['ferns', 62, 0.14, 0.94, -0.9, 0.8, 1.4],
-            ['boulders', 24, 0.24, 0.95, 0.3, 0.68, 1.55, undefined, false, 1.2],
-            ['pebbles', 44, 0.14, 0.95, -0.6, 0.72, 1.4],
-            ['grassSmall', 150, 0.14, 0.95, -1.3, 0.78, 1.5],
-            ['grassTall', 76, 0.26, 0.95, -0.9, 0.8, 1.45],
-            ['flowers', 58, 0.14, 0.94, -0.8, 0.8, 1.4]
+            ['bananaClumps', 32, 0.15, 0.93, -0.3, 0.8, 1.35],
+            ['pandanusShrubs', 28, 0.24, 0.95, -0.4, 0.75, 1.35],
+            ['mossLogs', 16, 0.16, 0.91, -0.2, 0.82, 1.3],
+            ['ferns', 66, 0.12, 0.94, -0.9, 0.8, 1.4],
+            ['boulders', 26, 0.16, 0.95, 0.25, 0.68, 1.55, undefined, false, 1.2],
+            ['pebbles', 46, 0.12, 0.95, -0.6, 0.72, 1.4],
+            ['grassSmall', 155, 0.12, 0.95, -1.3, 0.78, 1.5],
+            ['grassTall', 80, 0.15, 0.95, -0.9, 0.8, 1.45],
+            ['flowers', 60, 0.12, 0.94, -0.8, 0.8, 1.4]
           ]
         : [
-            ['bananaClumps', 36, 0.58, 0.93, -0.3, 0.8, 1.35],
-            ['pandanusShrubs', 40, 0.58, 0.95, -0.4, 0.75, 1.4],
-            ['mossLogs', 26, 0.58, 0.93, -0.2, 0.85, 1.4],
-            ['ferns', 84, 0.58, 0.95, -0.9, 0.82, 1.45],
-            ['boulders', 48, 0.58, 0.96, 0.3, 0.72, 1.75, undefined, false, 1.2],
-            ['pebbles', 76, 0.58, 0.96, -0.6, 0.72, 1.4],
-            ['grassSmall', 250, 0.58, 0.96, -1.3, 0.78, 1.5],
-            ['grassTall', 120, 0.58, 0.96, -0.9, 0.82, 1.45],
-            ['flowers', 90, 0.58, 0.95, -0.8, 0.82, 1.4]
+            ['bananaClumps', 56, 0.20, 0.93, -0.3, 0.8, 1.35],
+            ['pandanusShrubs', 54, 0.20, 0.95, -0.4, 0.75, 1.4],
+            ['mossLogs', 36, 0.20, 0.93, -0.2, 0.85, 1.4],
+            ['ferns', 130, 0.19, 0.95, -0.9, 0.82, 1.45],
+            ['boulders', 62, 0.20, 0.96, 0.25, 0.72, 1.75, undefined, false, 1.2],
+            ['pebbles', 96, 0.19, 0.96, -0.6, 0.72, 1.4],
+            ['grassSmall', 320, 0.19, 0.96, -1.3, 0.78, 1.5],
+            ['grassTall', 155, 0.20, 0.96, -0.9, 0.82, 1.45],
+            ['flowers', 120, 0.19, 0.95, -0.8, 0.82, 1.4]
           ];
 
   const runSpec = (spec: Spec, cx: number, r: number) => {

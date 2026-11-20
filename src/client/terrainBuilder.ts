@@ -48,60 +48,70 @@ function computeReliefWeight(
   // Pin spawn plaza
   const spawnX = night === 2 ? centerX : cfg.spawnPos[0];
   const spawnZ = cfg.spawnPos[2];
-  pinCircle(spawnX, spawnZ, 4.4, 3.0);
+  pinCircle(spawnX, spawnZ, 3.8, 1.8);
 
-  // Pin Night 3 Tier 1 & Tier 2 central structure, ramps & south spawn vista behind camera
+  // Pin Night 3 Tier 1 (northern crescent z>0, r in 12..24), Tier 2 (r<=8) & ramps only
+  // leaving the entire southern half (z<=0, r in 8.5..45) and inner moat open for hills & dense jungle
   if (night === 3) {
-    pinCircle(0, 0, 26.2, 4.0);
+    pinCircle(0, 0, 8.3, 1.5);
     if (getRampHeightAt(wx, wz) !== null) return 0;
-    const southVista = distToSegment2D(wx, wz, 0, 28, 0, 46);
-    w = Math.min(w, smoothstep(4.2 + extraPad, 7.2 + extraPad, southVista));
-    // Keep a wider chase-camera lane behind the spawn free of tall canopy (obstacle placement only)
-    if (avoidMotesAndPaths) w = Math.min(w, smoothstep(7.5 + extraPad, 11.0 + extraPad, southVista));
-  }
+    const r0 = Math.hypot(wx, wz);
+    const drT1 = r0 < 12.0 ? 12.0 - r0 : r0 > 24.0 ? r0 - 24.0 : 0;
+    const dzT1 = wz < 0 ? -wz : 0;
+    const dTier1 = Math.hypot(drT1, dzT1);
+    const padT1 = Math.max(0, extraPad);
+    w = Math.min(w, smoothstep(0.6 + padT1, 2.2 + padT1, dTier1));
 
-  // Pin Night 1 dock south corridor & Night 2 bridge ends
-  if (night === 1) {
-    const dockDist = distToSegment2D(wx, wz, 0, 26, 0, 42);
-    w = Math.min(w, smoothstep(2.8 + extraPad, 5.2 + extraPad, dockDist));
-  }
-  if (night === 2) {
-    const bridgeCorridor = distToSegment2D(wx, wz, 20, 0, 50, 0);
-    w = Math.min(w, smoothstep(3.4 + extraPad, 6.0 + extraPad, bridgeCorridor));
-    if (avoidMotesAndPaths) {
-      const mainAvenue = distToSegment2D(wx, wz, 0, 0, 70, 0);
-      w = Math.min(w, smoothstep(3.6 + extraPad, 5.8 + extraPad, mainAvenue));
+    for (const deg of [30, 150]) {
+      const rad = (deg * Math.PI) / 180;
+      const dRamp = distToSegment2D(
+        wx,
+        wz,
+        Math.cos(rad) * 23.5,
+        Math.sin(rad) * 23.5,
+        Math.cos(rad) * 31.0,
+        Math.sin(rad) * 31.0
+      );
+      w = Math.min(w, smoothstep(1.8 + padT1, 3.4 + padT1, dRamp));
     }
   }
 
-  // Pin lanterns, and optionally radial paths / motes / jump pads / charms
-  // Lanterns, jump pads & charms follow the terrain (rendered at ground lift), so they only
-  // reserve clearance for obstacle placement (avoidMotesAndPaths) and never carve flat pits.
+  // Pin Night 1 dock apron & Night 2 bridge ends (no radial highway cuts)
+  if (night === 1) {
+    const dockDist = distToSegment2D(wx, wz, 0, 35, 0, 41);
+    w = Math.min(w, smoothstep(2.0 + Math.max(0, extraPad), 3.8 + Math.max(0, extraPad), dockDist));
+  }
+  if (night === 2) {
+    const bridgeCorridor = distToSegment2D(wx, wz, 22, 0, 48, 0);
+    w = Math.min(w, smoothstep(2.8 + Math.max(0, extraPad), 4.8 + Math.max(0, extraPad), bridgeCorridor));
+  }
+
+  // Lanterns, jump pads & charms follow the terrain (rendered at ground lift); only reserve tight
+  // circular clearance around each pedestal so tree trunks do not overlap lantern meshes, while
+  // allowing dense jungle to grow continuously across old radial path lines.
   for (const l of cfg.lanterns) {
     if (!avoidMotesAndPaths) break;
     if (l.pos[1] !== 0) continue;
     const lxDisc = getDiscCenterForNight(night, l.pos[0]);
     if (lxDisc !== centerX) continue;
-    pinCircle(l.pos[0], l.pos[2], 3.2, 2.6);
-    const pathDist = distToSegment2D(wx, wz, spawnX, spawnZ, l.pos[0], l.pos[2]);
-    w = Math.min(w, smoothstep(2.2 + extraPad, 4.2 + extraPad, pathDist));
+    pinCircle(l.pos[0], l.pos[2], 2.5, 1.4);
   }
 
   if (avoidMotesAndPaths) {
     for (const m of cfg.moteSpawnPoints) {
       if (m[1] !== 0) continue;
       if (Math.hypot(m[0] - centerX, m[2]) > radius + 1) continue;
-      pinCircle(m[0], m[2], 1.4, 1.6);
+      pinCircle(m[0], m[2], 1.35, 0.5);
     }
   }
   if (avoidMotesAndPaths) {
     for (const jp of cfg.jumpPads) {
       if (jp.pos[1] !== 0) continue;
-      pinCircle(jp.pos[0], jp.pos[2], 2.2, 2.0);
+      pinCircle(jp.pos[0], jp.pos[2], 2.0, 1.4);
     }
     for (const c of cfg.charms) {
       if (c.pos[1] !== 0) continue;
-      pinCircle(c.pos[0], c.pos[2], 2.4, 2.0);
+      pinCircle(c.pos[0], c.pos[2], 2.0, 1.4);
     }
   }
 
@@ -174,13 +184,26 @@ function rawIslandElevation(
 }
 
 /**
+ * Returns true when an actor on Night 3 is standing on or above an elevated stone terrace or ramp
+ * (Tier 1 Y=3, Tier 2 Y=6, or inclined ramps), where base ground Y=0 hill displacement does not apply.
+ */
+function isOnNight3ElevatedStructure(worldX: number, worldZ: number, simY: number): boolean {
+  const r = Math.hypot(worldX, worldZ);
+  if (r <= 8.25 && simY >= 2.5) return true;
+  if (r >= 11.75 && r <= 24.25 && worldZ >= -0.25 && simY >= 2.1) return true;
+  const rampY = getRampHeightAt(worldX, worldZ);
+  if (rampY !== null && simY >= rampY - 0.45) return true;
+  return false;
+}
+
+/**
  * Returns the visual ground elevation offset (`>= 0`) for characters, shades, and motes on base island ground
  * so rendered actors walk smoothly OVER rolling 3D hills instead of clipping through terrain.
  */
 export function getVisualGroundLift(night: NightId, worldX: number, worldZ: number, simY: number): number {
-  // Never lift when falling below cliff rim or standing on elevated Night 3 tiers/ramps
+  // Never lift when falling below cliff rim or standing on elevated Night 3 stone platforms/ramps
   if (simY < -0.1) return 0;
-  if (night === 3 && (simY > 0.25 || Math.hypot(worldX, worldZ) < 25.0)) return 0;
+  if (night === 3 && isOnNight3ElevatedStructure(worldX, worldZ, simY)) return 0;
 
   if (night === 1) {
     return Math.hypot(worldX, worldZ) <= 40.0 ? sampleIslandElevation(1, 0, 40, worldX, worldZ) : 0;
@@ -194,8 +217,43 @@ export function getVisualGroundLift(night: NightId, worldX: number, worldZ: numb
 }
 
 /**
+ * Computes the envelope ground lift across an actor's footprint radius (`footprintR`) so wide meshes
+ * (Mây's skirt, dashing Mây, Bóng Mực tendrils) never clip into steep uphill terrain facets.
+ */
+export function getActorGroundLift(
+  night: NightId,
+  worldX: number,
+  worldZ: number,
+  simY: number,
+  footprintR = 0.46
+): number {
+  if (simY < -0.1) return 0;
+  if (night === 3 && isOnNight3ElevatedStructure(worldX, worldZ, simY)) return 0;
+
+  let maxLift = getVisualGroundLift(night, worldX, worldZ, simY);
+  if (footprintR <= 0) return maxLift;
+
+  const diag = footprintR * 0.7071;
+  const offsets: [number, number][] = [
+    [footprintR, 0],
+    [-footprintR, 0],
+    [0, footprintR],
+    [0, -footprintR],
+    [diag, diag],
+    [-diag, diag],
+    [diag, -diag],
+    [-diag, -diag]
+  ];
+  for (const [ox, oz] of offsets) {
+    const h = getVisualGroundLift(night, worldX + ox, worldZ + oz, simY);
+    if (h > maxLift) maxLift = h;
+  }
+  return maxLift > 0.001 ? maxLift + 0.04 : 0;
+}
+
+/**
  * Returns true if placing an obstacle (tree trunk, large boulder, dense shrub) at `(worldX, worldZ)`
- * preserves generous clearance around walkways, spawn, lanterns, motes, jump pads, bridge, and ramps.
+ * preserves clearance around spawn, lanterns, jump pads, bridge, and Night 3 structures.
  */
 export function isClearPlayableSpot(
   night: NightId,
@@ -206,7 +264,7 @@ export function isClearPlayableSpot(
   clearanceMargin = 1.0
 ): boolean {
   const rLocal = Math.hypot(worldX - centerX, worldZ);
-  if (rLocal < 5.0 || rLocal > radius - 0.8) return false;
+  if (rLocal < 3.8 || rLocal > radius - 0.8) return false;
   const w = computeReliefWeight(night, centerX, radius, worldX, worldZ, clearanceMargin, true);
   return w >= 0.32;
 }
@@ -219,7 +277,7 @@ export function buildSculptedIslandMesh(
   centerX: number,
   radius: number
 ): THREE.BufferGeometry {
-  const geo = new THREE.RingGeometry(0.001, radius, 64, 24);
+  const geo = new THREE.RingGeometry(0.001, radius, 112, 48);
   geo.rotateX(-Math.PI / 2);
 
   const pos = geo.getAttribute('position');

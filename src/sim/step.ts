@@ -58,7 +58,9 @@ import {
   getHighestGroundAt,
   getMapConfig,
   resolveMovementObstacles,
-  sampleDrifterMistPoint
+  rollMoteTier,
+  sampleDrifterMistPoint,
+  sampleRandomIslandMotePos
 } from './maps';
 import type {
   InputState,
@@ -142,13 +144,25 @@ function spawnDroppedMotes(state: SimState, origin: Vec3, count: number, ringMin
       id,
       pos: dropPos,
       kind: 'dropped',
+      tier: 1,
       ttlTicks: DROPPED_MOTE_TTL_TICKS,
       createdTick: state.simTick
     });
   }
 }
 
+function applySafeShadeMove(night: NightId, shade: ShadeState, targetX: number, targetZ: number): void {
+  const [nx, nz] = resolveMovementObstacles(night, shade.pos[0], shade.pos[2], targetX, targetZ, shade.pos[1]);
+  const floor = getHighestGroundAt(night, nx, nz, shade.pos[1]);
+  if (floor !== null) {
+    shade.pos[0] = nx;
+    shade.pos[2] = nz;
+    shade.pos[1] = floor + SHADE_DEFAULT_Y_OFFSET;
+  }
+}
+
 function pushShadeOutOfSafeZone(
+  night: NightId,
   shade: ShadeState,
   lanterns: ReadonlyArray<LanternState>,
   playerPos: Vec3,
@@ -169,18 +183,15 @@ function pushShadeOutOfSafeZone(
 
       if (shade.safePushTicksLeft > 0) {
         if (shade.safePushTicksLeft === 1) {
-          shade.pos[0] = lantern.pos[0] + nx * safeEdge;
-          shade.pos[2] = lantern.pos[2] + nz * safeEdge;
+          applySafeShadeMove(night, shade, lantern.pos[0] + nx * safeEdge, lantern.pos[2] + nz * safeEdge);
         } else {
           const step = (safeEdge - d) / shade.safePushTicksLeft;
-          shade.pos[0] += nx * step;
-          shade.pos[2] += nz * step;
+          applySafeShadeMove(night, shade, shade.pos[0] + nx * step, shade.pos[2] + nz * step);
         }
         continue;
       }
 
-      shade.pos[0] = lantern.pos[0] + nx * safeEdge;
-      shade.pos[2] = lantern.pos[2] + nz * safeEdge;
+      applySafeShadeMove(night, shade, lantern.pos[0] + nx * safeEdge, lantern.pos[2] + nz * safeEdge);
 
       if (allowTangent && pass === 0) {
         const toPx = playerPos[0] - lantern.pos[0];
@@ -195,8 +206,7 @@ function pushShadeOutOfSafeZone(
         const sLen = Math.hypot(sx, sz) || 1;
         nx = sx / sLen;
         nz = sz / sLen;
-        shade.pos[0] = lantern.pos[0] + nx * safeEdge;
-        shade.pos[2] = lantern.pos[2] + nz * safeEdge;
+        applySafeShadeMove(night, shade, lantern.pos[0] + nx * safeEdge, lantern.pos[2] + nz * safeEdge);
       }
     }
     if (!adjusted) break;
@@ -430,7 +440,13 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
     p.pos[0] = nextX;
     p.pos[2] = nextZ;
 
-    if (!dashingThisTick) {
+    if (dashingThisTick) {
+      const floorY = getHighestGroundAt(state.night, p.pos[0], p.pos[2], prevY);
+      if (floorY !== null && (p.grounded || floorY > p.pos[1])) {
+        p.pos[1] = floorY;
+        p.grounded = true;
+      }
+    } else {
       if (jumpPressed && p.grounded) {
         p.vel[1] = JUMP_VELOCITY;
         p.grounded = false;
@@ -504,7 +520,8 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
         ) {
           if (!pickedIds) pickedIds = new Set<string>();
           pickedIds.add(mote.id);
-          p.carried += 1;
+          const gain = Math.min(p.capacity - p.carried, mote.tier ?? 1);
+          p.carried += gain;
           events.push({ type: 'event', tick: state.tick, name: 'mote_picked', data: { carried: p.carried } });
         }
       }
@@ -618,7 +635,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
 
   // 6. Update Safe Zones (6.0 m)
   for (const shade of sortedIds(state.shades)) {
-    pushShadeOutOfSafeZone(shade, state.lanterns, p.pos, false);
+    pushShadeOutOfSafeZone(state.night, shade, state.lanterns, p.pos, false);
   }
 
   // 7. Pulse (Tỏa Sáng: center Y+0.8, 3D dist <= 5m, 3 motes, 3s cd)
@@ -699,7 +716,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
           shade.pushTicksLeft = 0; // stop pushing if hitting cliff edge
         }
       }
-      pushShadeOutOfSafeZone(shade, state.lanterns, p.pos, false);
+      pushShadeOutOfSafeZone(state.night, shade, state.lanterns, p.pos, false);
       continue;
     }
 
@@ -710,11 +727,13 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
       const rawX = sx0 + shade.recoilDir[0] * step;
       const rawZ = sz0 + shade.recoilDir[1] * step;
       const [nx, nz] = resolveMovementObstacles(state.night, sx0, sz0, rawX, rawZ, shade.pos[1]);
-      if (getHighestGroundAt(state.night, nx, nz, shade.pos[1]) !== null) {
+      const floor = getHighestGroundAt(state.night, nx, nz, shade.pos[1]);
+      if (floor !== null) {
         shade.pos[0] = nx;
         shade.pos[2] = nz;
+        shade.pos[1] = floor + SHADE_DEFAULT_Y_OFFSET;
       }
-      pushShadeOutOfSafeZone(shade, state.lanterns, p.pos, false);
+      pushShadeOutOfSafeZone(state.night, shade, state.lanterns, p.pos, false);
       continue;
     }
 
@@ -830,7 +849,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
           shade.wanderDir = [-shade.wanderDir[0], -shade.wanderDir[1]];
         }
       }
-      pushShadeOutOfSafeZone(shade, state.lanterns, p.pos, false);
+      pushShadeOutOfSafeZone(state.night, shade, state.lanterns, p.pos, false);
     } else if (shade.state === 'chase') {
       const dx = p.pos[0] - sx0;
       const dz = p.pos[2] - sz0;
@@ -847,7 +866,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
           shade.pos[1] = floor + SHADE_DEFAULT_Y_OFFSET;
         }
       }
-      pushShadeOutOfSafeZone(shade, state.lanterns, p.pos, true);
+      pushShadeOutOfSafeZone(state.night, shade, state.lanterns, p.pos, true);
     }
   }
 
@@ -862,9 +881,10 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
       } else {
         drifter.wanderAngle += 0.025;
         drifter.pos[0] += Math.cos(drifter.wanderAngle) * DRIFTER_IDLE_SPEED * DT;
-        drifter.pos[1] = approach(drifter.pos[1], 1.5, 2.0 * DT);
         drifter.pos[2] += Math.sin(drifter.wanderAngle) * DRIFTER_IDLE_SPEED * DT;
         clampToFog(drifter.pos, state.night);
+        const groundY = getHighestGroundAt(state.night, drifter.pos[0], drifter.pos[2], 10) ?? 0;
+        drifter.pos[1] = Math.max(groundY + 0.85, approach(drifter.pos[1], groundY + 1.5, 3.5 * DT));
       }
     } else if (drifter.state === 'chase') {
       if (
@@ -879,7 +899,8 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
         const d = Math.hypot(dx, dz) || 1;
         const step = Math.min(d, DRIFTER_FAST_SPEED * DT);
         drifter.pos[0] += (dx / d) * step;
-        drifter.pos[1] = approach(drifter.pos[1], p.pos[1] + 0.8, 4.5 * DT);
+        const groundY = getHighestGroundAt(state.night, drifter.pos[0], drifter.pos[2], 10) ?? 0;
+        drifter.pos[1] = approach(drifter.pos[1], Math.max(groundY + 0.8, p.pos[1] + 0.8), 4.5 * DT);
         drifter.pos[2] += (dz / d) * step;
       }
     } else if (drifter.state === 'flee') {
@@ -889,9 +910,18 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
       const dirX = d > 1e-6 ? dx / d : 1;
       const dirZ = d > 1e-6 ? dz / d : 0;
       drifter.pos[0] += dirX * DRIFTER_FAST_SPEED * DT;
-      drifter.pos[1] = approach(drifter.pos[1], Math.max(1.5, p.pos[1] + 1.2), 2.5 * DT);
       drifter.pos[2] += dirZ * DRIFTER_FAST_SPEED * DT;
       clampToFog(drifter.pos, state.night);
+      const groundY = getHighestGroundAt(state.night, drifter.pos[0], drifter.pos[2], 10) ?? 0;
+      drifter.pos[1] = Math.max(groundY + 0.85, approach(drifter.pos[1], Math.max(groundY + 1.5, p.pos[1] + 1.2), 3.5 * DT));
+    }
+    if (state.night === 3) {
+      const rD = Math.hypot(drifter.pos[0], drifter.pos[2]);
+      if (rD < 2.2) {
+        const s = 2.21 / (rD || 1);
+        drifter.pos[0] *= s;
+        drifter.pos[2] *= s;
+      }
     }
   }
 
@@ -963,20 +993,17 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
   // 10. Scheduled Spawns (new entities interact starting next tick)
   if (state.randomMotes && state.simTick % MOTE_RESPAWN_INTERVAL_TICKS === 0) {
     if (state.motes.length < MAX_ACTIVE_MOTES) {
-      const freePoints = map.moteSpawnPoints.filter(
-        (pt) => !state.motes.some((m) => distXZ(m.pos, pt) < 0.5 && Math.abs(m.pos[1] - pt[1]) < 0.5)
-      );
-      if (freePoints.length > 0) {
-        const pt = freePoints[Math.floor(state.rng() * freePoints.length)];
-        const id = allocateNextId(state, 'M');
-        state.motes.push({
-          id,
-          pos: [pt[0], pt[1], pt[2]],
-          kind: 'random',
-          ttlTicks: null,
-          createdTick: state.simTick
-        });
-      }
+      const existing = state.motes.map((m) => m.pos);
+      const pt = sampleRandomIslandMotePos(state.night, state.rng, existing, p.pos);
+      const id = allocateNextId(state, 'M');
+      state.motes.push({
+        id,
+        pos: [pt[0], pt[1], pt[2]],
+        kind: 'random',
+        tier: rollMoteTier(state.rng),
+        ttlTicks: null,
+        createdTick: state.simTick
+      });
     }
   }
 

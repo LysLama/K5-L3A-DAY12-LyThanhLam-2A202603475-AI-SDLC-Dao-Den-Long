@@ -6,6 +6,7 @@ export type GameStatus = 'playing' | 'paused' | 'won' | 'lost';
 export type ShadeBehaviorState = 'spawning' | 'wander' | 'chase' | 'recoil' | 'stunned' | 'drain';
 export type DrifterBehaviorState = 'idle' | 'chase' | 'flee';
 export type MoteKind = 'random' | 'dropped';
+export type MoteTier = 1 | 2 | 3 | 4 | 5;
 
 export interface InputState {
   move: Vec2;
@@ -43,6 +44,7 @@ export interface ScenarioMoteObj {
   id?: string;
   pos: Vec3;
   kind?: MoteKind;
+  tier?: MoteTier;
   ttl_s?: number;
 }
 
@@ -124,6 +126,7 @@ export interface MoteState {
   id: string;
   pos: Vec3;
   kind: MoteKind;
+  tier: MoteTier;
   ttlTicks: number | null;
   createdTick: number;
 }
@@ -268,6 +271,7 @@ export interface SimSnapshot {
     id: string;
     pos: Vec3;
     kind: MoteKind;
+    tier?: MoteTier;
     ttl_s: number | null;
   }>;
   motes_active: number;

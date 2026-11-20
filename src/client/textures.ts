@@ -53,7 +53,7 @@ export function createIslandGroundTexture(
   const sxCenter = toPxX(spawnLocal[0]);
   const szCenter = toPxY(spawnLocal[1]);
 
-  // Draw warm sandy pathways toward lanterns belonging to this disc
+  // Subtle stone dais ring under each lantern belonging to this disc (no straight artificial roads)
   for (const lantern of mapCfg.lanterns) {
     const dxDisc = lantern.pos[0] - discCenterX;
     const dzDisc = lantern.pos[2];
@@ -62,28 +62,6 @@ export function createIslandGroundTexture(
     const lx = toPxX(lantern.pos[0]);
     const lz = toPxY(lantern.pos[2]);
 
-    ctx.save();
-    ctx.strokeStyle = 'rgba(201, 180, 138, 0.36)';
-    ctx.lineWidth = 12;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(sxCenter, szCenter);
-    ctx.lineTo(lx, lz);
-    ctx.stroke();
-
-    const steps = 6;
-    for (let i = 1; i <= steps; i++) {
-      const t = i / (steps + 0.5);
-      const px = sxCenter + (lx - sxCenter) * t;
-      const py = szCenter + (lz - szCenter) * t;
-      ctx.fillStyle = 'rgba(201, 180, 138, 0.45)';
-      ctx.beginPath();
-      ctx.ellipse(px, py, 5.5, 4, t * 2.1, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
-
-    // Subtle stone dais ring under each lantern
     ctx.strokeStyle = 'rgba(242, 193, 78, 0.25)';
     ctx.lineWidth = 2.5;
     ctx.beginPath();

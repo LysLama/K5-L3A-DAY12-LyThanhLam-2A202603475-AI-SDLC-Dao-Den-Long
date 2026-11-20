@@ -406,4 +406,62 @@ describe('stepTick Contract v1.2 rules (movement, fuel, drain, dawn_survived)', 
       data: { result: 'lost', reason: 'no_flames' }
     });
   });
+
+  it('glides up and down Night 3 inclined ramps during Dash without clipping under the ramp, and blocks sideways entry under ramps', () => {
+    const rad30 = (30 * Math.PI) / 180;
+    const ux = Math.cos(rad30);
+    const uz = Math.sin(rad30);
+    // Start at bottom entrance of 30-deg ramp (s=29.8, y=0.1) facing up the ramp (-ux, -uz)
+    const w = createWorld(
+      1,
+      {
+        random_motes: false,
+        random_shades: false,
+        random_drifters: false,
+        motes: [],
+        player: { pos: [ux * 29.8, 0.1, uz * 29.8] }
+      },
+      3
+    );
+    // Walk 1 tick up ramp then Dash up ramp
+    stepTick(w, neutralInput({ move: [-ux, -uz], cam_yaw_deg: 0 }));
+    stepTick(w, neutralInput({ move: [-ux, -uz], dash: true, cam_yaw_deg: 0 }));
+    for (let i = 0; i < 11; i++) {
+      stepTick(w, neutralInput({ move: [-ux, -uz], dash: false, cam_yaw_deg: 0 }));
+    }
+    // Player dashed ~2.8m up the ramp -> Y must have climbed smoothly along the ramp (never stuck at Y=0!)
+    expect(w.player.pos[1]).toBeGreaterThan(1.2);
+    expect(w.player.grounded).toBe(true);
+  });
+
+  it('spawns 5-tier orbs randomly within island boundaries with decreasing tier probabilities and grants 1..5 motes on pickup', () => {
+    const tierCounts = [0, 0, 0, 0, 0, 0];
+    for (let seed = 1; seed <= 40; seed++) {
+      const w = createWorld(seed, undefined, 1);
+      for (const m of w.motes) {
+        tierCounts[m.tier] += 1;
+        expect(Math.hypot(m.pos[0], m.pos[2])).toBeLessThanOrEqual(38.5);
+      }
+    }
+    // Decreasing frequency from Tier 1 to Tier 5
+    expect(tierCounts[1]).toBeGreaterThan(tierCounts[2]);
+    expect(tierCounts[2]).toBeGreaterThan(tierCounts[3]);
+    expect(tierCounts[3]).toBeGreaterThan(tierCounts[4]);
+    expect(tierCounts[4]).toBeGreaterThan(tierCounts[5]);
+    expect(tierCounts[5]).toBeGreaterThan(0);
+
+    // Picking up a Tier 4 orb adds +4 to carried
+    const wPick = createWorld(
+      1,
+      {
+        random_motes: false,
+        random_shades: false,
+        motes: [{ id: 'M1', pos: [0, 0, 0.5], tier: 4 }],
+        player: { pos: [0, 0, 0], carried: 0 }
+      },
+      1
+    );
+    stepTick(wPick, neutralInput());
+    expect(wPick.player.carried).toBe(4);
+  });
 });

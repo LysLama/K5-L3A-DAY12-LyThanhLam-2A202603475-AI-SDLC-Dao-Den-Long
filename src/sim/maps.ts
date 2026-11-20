@@ -1,5 +1,5 @@
 import { SHADE_NIGHT3_SPEED, TUNING } from './constants';
-import type { NightId, Vec2, Vec3 } from './types';
+import type { MoteTier, NightId, Vec2, Vec3 } from './types';
 
 export interface JumpPadDef {
   pos: Vec3;
@@ -246,8 +246,32 @@ export function resolveMovementObstacles(
     z *= s;
   }
 
-  // 3. Tier 1 vertical cliff walls (12 <= r <= 24 && z > 0, Y = 3m), allowing entry via ramps
-  if (y < 2.85 && getRampHeightAt(x, z) === null) {
+  // 2b. Ramp side walls: prevent actors from walking or dashing sideways under/into an elevated ramp
+  for (const rad of RAMP_ANGLES_RAD) {
+    const ux = Math.cos(rad);
+    const uz = Math.sin(rad);
+    const vx = -uz;
+    const vz = ux;
+    const sNext = x * ux + z * uz;
+    const latNext = x * vx + z * vz;
+    if (sNext >= 23.95 && sNext <= 29.85 && Math.abs(latNext) < 1.52) {
+      const rampY = 3.0 * ((30.0 - Math.max(24.0, Math.min(30.0, sNext))) / 6.0);
+      if (y < rampY - 0.42) {
+        const latPrev = prevX * vx + prevZ * vz;
+        const sign = latPrev >= 0 ? 1 : -1;
+        if (Math.abs(latPrev) >= 1.48) {
+          const clampedLat = sign * 1.525;
+          x = sNext * ux + clampedLat * vx;
+          z = sNext * uz + clampedLat * vz;
+        }
+      }
+    }
+  }
+
+  // 3. Tier 1 vertical cliff walls (12 <= r <= 24 && z > 0, Y = 3m), allowing entry only via the top of ramps
+  const rampYAtNext = getRampHeightAt(x, z);
+  const onValidRampSurface = rampYAtNext !== null && y >= rampYAtNext - 0.55;
+  if (y < 2.85 && !onValidRampSurface) {
     const prevInT1 = prevR >= 12.0 && prevR <= 24.0 && prevZ > 0;
     const rAfter = Math.hypot(x, z);
     const nextInT1 = rAfter >= 12.0 && rAfter <= 24.0 && z > 0;
@@ -267,6 +291,96 @@ export function resolveMovementObstacles(
   }
 
   return [x, z];
+}
+
+/**
+ * Rolls one of 5 firefly orb tiers (values 1..5) with strictly decreasing probability:
+ * Tier 1: 40%, Tier 2: 25%, Tier 3: 18%, Tier 4: 11%, Tier 5: 6%.
+ */
+export function rollMoteTier(rng: () => number): MoteTier {
+  const u = rng();
+  if (u < 0.40) return 1;
+  if (u < 0.65) return 2;
+  if (u < 0.83) return 3;
+  if (u < 0.94) return 4;
+  return 5;
+}
+
+/**
+ * Samples a completely random valid orb position within the island boundaries for Night 1, 2, or 3.
+ */
+export function sampleRandomIslandMotePos(
+  night: NightId,
+  rng: () => number,
+  existingPositions: ReadonlyArray<Vec3>,
+  avoidPos?: Vec3
+): Vec3 {
+  const cfg = getMapConfig(night);
+  let lastCandidate: Vec3 = [0, 0, 10];
+
+  for (let attempt = 0; attempt < 48; attempt++) {
+    let x = 0;
+    let y = 0;
+    let z = 0;
+
+    if (night === 1) {
+      const r = 3.2 + Math.sqrt(rng()) * 34.6; // [3.2 .. 37.8] inside R=40
+      const angle = rng() * Math.PI * 2;
+      x = round3(Math.cos(angle) * r);
+      z = round3(Math.sin(angle) * r);
+      y = 0;
+    } else if (night === 2) {
+      const cx = rng() < 0.5 ? 0 : 70;
+      const r = 2.0 + Math.sqrt(rng()) * 24.0; // [2.0 .. 26.0] inside R=28
+      const angle = rng() * Math.PI * 2;
+      x = round3(cx + Math.cos(angle) * r);
+      z = round3(Math.sin(angle) * r);
+      y = 0;
+    } else {
+      const r = 3.0 + Math.sqrt(rng()) * 39.5; // [3.0 .. 42.5] inside R=45, outside Bell Tower r<2
+      const angle = rng() * Math.PI * 2;
+      x = round3(Math.cos(angle) * r);
+      z = round3(Math.sin(angle) * r);
+      // Avoid cliff step seams on Night 3
+      if ((r > 7.4 && r < 8.7) || (z > -0.5 && ((r > 11.3 && r < 12.7) || (r > 23.3 && r < 24.7)))) {
+        continue;
+      }
+      if (getRampHeightAt(x, z) !== null) continue;
+      if (r <= 7.4) y = 6;
+      else if (r >= 12.7 && r <= 23.3 && z > 0.5) y = 3;
+      else y = 0;
+    }
+
+    lastCandidate = [x, y, z];
+
+    if (avoidPos && Math.hypot(x - avoidPos[0], z - avoidPos[2]) < 2.6) continue;
+    let tooClose = false;
+    for (const l of cfg.lanterns) {
+      if (Math.hypot(x - l.pos[0], z - l.pos[2]) < 2.4) {
+        tooClose = true;
+        break;
+      }
+    }
+    if (tooClose) continue;
+
+    for (const jp of cfg.jumpPads) {
+      if (Math.hypot(x - jp.pos[0], z - jp.pos[2]) < 1.8) {
+        tooClose = true;
+        break;
+      }
+    }
+    if (tooClose) continue;
+
+    for (const m of existingPositions) {
+      if (Math.hypot(x - m[0], z - m[2]) < 1.8 && Math.abs(y - m[1]) < 1.0) {
+        tooClose = true;
+        break;
+      }
+    }
+    if (!tooClose) return lastCandidate;
+  }
+
+  return lastCandidate;
 }
 
 export function findJumpPadHit(night: NightId, x: number, y: number, z: number): JumpPadDef | null {

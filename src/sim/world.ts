@@ -8,7 +8,7 @@ import {
   SHADE_SPAWNING_TICKS,
   TUNING
 } from './constants';
-import { getHighestGroundAt, getMapConfig } from './maps';
+import { getHighestGroundAt, getMapConfig, rollMoteTier, sampleRandomIslandMotePos } from './maps';
 import { createRng } from './rng';
 import type {
   CharmState,
@@ -168,11 +168,12 @@ export function createWorld(
   if (scenario?.motes !== undefined) {
     const normalized = scenario.motes.map((entry) =>
       Array.isArray(entry)
-        ? { pos: entry, kind: 'random' as const }
+        ? { pos: entry, kind: 'random' as const, tier: 1 as const }
         : {
             id: entry.id,
             pos: entry.pos,
             kind: entry.kind ?? ('random' as const),
+            tier: entry.tier ?? (1 as const),
             ttl_s: entry.ttl_s
           }
     );
@@ -186,23 +187,21 @@ export function createWorld(
         id: ids[idx],
         pos: [item.pos[0], item.pos[1], item.pos[2]],
         kind: item.kind,
+        tier: item.tier,
         ttlTicks,
         createdTick: 0
       });
     });
   } else if (randomMotes) {
-    const pool = [...map.moteSpawnPoints];
-    const count = Math.min(INITIAL_MOTE_COUNT, pool.length);
-    for (let i = 0; i < count; i++) {
-      const j = i + Math.floor(rng() * (pool.length - i));
-      const tmp = pool[i];
-      pool[i] = pool[j];
-      pool[j] = tmp;
-      const pt = pool[i];
+    const placed: Vec3[] = [];
+    for (let i = 0; i < INITIAL_MOTE_COUNT; i++) {
+      const pt = sampleRandomIslandMotePos(night, rng, placed, playerPos);
+      placed.push(pt);
       motes.push({
         id: `M${i + 1}`,
         pos: [pt[0], pt[1], pt[2]],
         kind: 'random',
+        tier: rollMoteTier(rng),
         ttlTicks: null,
         createdTick: 0
       });
@@ -421,6 +420,7 @@ export function createBenchWorld(seed = 42): SimState {
       id: `M${i + 1}`,
       pos: [round3(Math.cos(theta) * r), 0, round3(Math.sin(theta) * r)],
       kind: 'random',
+      tier: 1,
       ttlTicks: null,
       createdTick: 0
     });

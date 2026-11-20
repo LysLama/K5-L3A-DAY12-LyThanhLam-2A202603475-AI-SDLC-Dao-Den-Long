@@ -144,6 +144,12 @@ describe('dense Vietnamese tropical 3D jungle assets & multi-size scatterer', ()
       (it) => Math.abs(it.y - 6.0) < 0.01
     );
     expect(tier2Trees.length).toBeGreaterThanOrEqual(10);
+
+    // Night 3 southern inner basin (r < 25.5, z < -1) is now densely forested instead of barren
+    const n3InnerSouth = Object.values(p3)
+      .flat()
+      .filter((it) => it.z < -1 && Math.hypot(it.x, it.z) < 25.5);
+    expect(n3InnerSouth.length).toBeGreaterThanOrEqual(200);
   });
 
   it('keeps trunk and foliage colours clearly different (warm bark vs green leaves)', () => {

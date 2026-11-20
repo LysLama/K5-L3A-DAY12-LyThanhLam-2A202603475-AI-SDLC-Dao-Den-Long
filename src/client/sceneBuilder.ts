@@ -19,6 +19,7 @@ import {
   buildCoastalAndOffshoreDetails,
   buildNight3CliffButtresses,
   buildSculptedIslandMesh,
+  getActorGroundLift,
   getVisualGroundLift
 } from './terrainBuilder';
 import { createBambooBridgeTexture, createGlowTexture, createIslandGroundTexture } from './textures';
@@ -1040,11 +1041,13 @@ export class IslandScene {
     const renderPlayerPos = interpolatePos(prevPlayerPos, p.pos, alpha);
     const benchMode = Boolean(opts.benchMode);
     if (!benchMode) {
-      renderPlayerPos[1] += getVisualGroundLift(
+      const footprintR = p.dashTicksLeft > 0 ? 0.85 : 0.48;
+      renderPlayerPos[1] += getActorGroundLift(
         this.night,
         renderPlayerPos[0],
         renderPlayerPos[2],
-        renderPlayerPos[1]
+        renderPlayerPos[1],
+        footprintR
       );
     }
 
@@ -1331,24 +1334,35 @@ export class IslandScene {
     this.hemiLight.intensity = computeAmbientIntensity(litCount, totalLanterns) + atmRes.lightningBoost;
     this.dirLight.intensity = 0.55 + warmFactor * 0.4 + atmRes.lightningBoost * 0.9;
 
-    // 3. Sync Motes at proper elevation pos[1] + terrain relief via GPU InstancedMesh
+    // 3. Sync Motes at proper elevation pos[1] + terrain relief + 5-tier scale & color via GPU InstancedMesh
+    const TIER_SCALES: readonly number[] = [0.85, 1.15, 1.45, 1.78, 2.15];
+    const TIER_CORE_HEX: readonly number[] = [0xfff3a1, 0x6fffe9, 0x48cae4, 0xe0aaff, 0xff758f];
+    const TIER_HALO_HEX: readonly number[] = [0xffd166, 0x2ec4b6, 0x0096c7, 0x9d4edd, 0xff9e00];
     const moteCount = Math.min(state.motes.length, MAX_INST_MOTES);
     for (let i = 0; i < moteCount; i++) {
       const m = state.motes[i];
-      const moteLift = benchMode ? 0 : getVisualGroundLift(this.night, m.pos[0], m.pos[2], m.pos[1]);
-      const bob = m.pos[1] + moteLift + 0.65 + Math.sin(elapsedSec * 3.6 + m.pos[0] * 0.7) * 0.16;
+      const tierIdx = Math.max(0, Math.min(4, (m.tier ?? 1) - 1));
+      const moteScale = m.kind === 'dropped' ? 0.9 : TIER_SCALES[tierIdx];
+      const moteLift = benchMode ? 0 : getActorGroundLift(this.night, m.pos[0], m.pos[2], m.pos[1], 0.25);
+      const bob =
+        m.pos[1] +
+        moteLift +
+        0.65 +
+        tierIdx * 0.11 +
+        Math.sin(elapsedSec * (3.6 + tierIdx * 0.35) + m.pos[0] * 0.7) * 0.16;
       this.tmpDummy.position.set(m.pos[0], bob, m.pos[2]);
       this.tmpDummy.rotation.set(0, 0, 0);
-      this.tmpDummy.scale.setScalar(1);
+      this.tmpDummy.scale.setScalar(moteScale);
       this.tmpDummy.updateMatrix();
       this.moteCoreInst.setMatrixAt(i, this.tmpDummy.matrix);
-      this.tmpColor.setHex(m.kind === 'dropped' ? PALETTE.moteGold : PALETTE.moteGlow);
+      this.tmpColor.setHex(m.kind === 'dropped' ? PALETTE.moteGold : TIER_CORE_HEX[tierIdx]);
       this.moteCoreInst.setColorAt(i, this.tmpColor);
 
       this.tmpDummy.lookAt(camX, camY, camZ);
+      this.tmpDummy.scale.setScalar(moteScale * (1.05 + tierIdx * 0.08));
       this.tmpDummy.updateMatrix();
       this.moteHaloInst.setMatrixAt(i, this.tmpDummy.matrix);
-      this.tmpColor.setHex(m.kind === 'dropped' ? PALETTE.goldUi : PALETTE.moteGold);
+      this.tmpColor.setHex(m.kind === 'dropped' ? PALETTE.goldUi : TIER_HALO_HEX[tierIdx]);
       this.moteHaloInst.setColorAt(i, this.tmpColor);
     }
     this.moteCoreInst.count = moteCount;
@@ -1393,16 +1407,16 @@ export class IslandScene {
       const sx = prevShade[0] + (s.pos[0] - prevShade[0]) * alpha;
       const sy = prevShade[1] + (s.pos[1] - prevShade[1]) * alpha;
       const sz = prevShade[2] + (s.pos[2] - prevShade[2]) * alpha;
-      const syGrounded = sy + (benchMode ? 0 : getVisualGroundLift(this.night, sx, sz, sy));
+      const syGrounded = sy + (benchMode ? 0 : getActorGroundLift(this.night, sx, sz, sy, 0.56));
 
       const spawnScale =
         s.state === 'spawning' ? Math.max(0.25, 1 - s.stateTicksLeft / 30) : 1.0;
       const hover =
         s.state === 'stunned'
-          ? -0.08
+          ? -0.05
           : s.state === 'drain'
             ? 0.25 + Math.sin(elapsedSec * 9) * 0.12
-            : Math.sin(elapsedSec * 4.5 + s.pos[0]) * 0.14;
+            : Math.sin(elapsedSec * 4.5 + s.pos[0]) * 0.12;
 
       const drainTarget =
         s.state === 'drain' && s.targetLanternId
@@ -1411,7 +1425,7 @@ export class IslandScene {
       const lookX = drainTarget ? drainTarget.pos[0] : renderPlayerPos[0];
       const lookZ = drainTarget ? drainTarget.pos[2] : renderPlayerPos[2];
 
-      this.tmpDummy.position.set(sx, syGrounded + 0.9 + hover, sz);
+      this.tmpDummy.position.set(sx, syGrounded + 1.02 + hover, sz);
       this.tmpDummy.rotation.set(s.state === 'drain' ? 0.28 : 0, Math.atan2(lookX - sx, lookZ - sz), 0);
       this.tmpDummy.scale.setScalar(spawnScale);
       this.tmpDummy.updateMatrix();
@@ -1532,7 +1546,7 @@ export class IslandScene {
       const vis = this.drifterVisuals.get(d.id) ?? this.createDrifterVisual(d.id);
       const prevD = prevDrifterPositions.get(d.id) ?? d.pos;
       const rPos = interpolatePos(prevD, d.pos, alpha);
-      const drifterLift = benchMode ? 0 : getVisualGroundLift(this.night, rPos[0], rPos[2], rPos[1]);
+      const drifterLift = benchMode ? 0 : getActorGroundLift(this.night, rPos[0], rPos[2], rPos[1], 0.55);
       const swayY = rPos[1] + drifterLift + 0.85 + Math.sin(elapsedSec * 5.2 + d.pos[2]) * 0.18;
       vis.group.position.set(rPos[0], swayY, rPos[2]);
       const speedYaw = Math.atan2(d.pos[0] - prevD[0], d.pos[2] - prevD[2]);
