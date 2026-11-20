@@ -41,22 +41,22 @@ function runHeadless(cli, opts) {
   return parseJsonl(opts.out);
 }
 
-console.log('1/5 Running Vitest unit & contract suite...');
+console.log('1/6 Running Vitest unit & contract suite...');
 if (process.platform === 'win32') {
   execFileSync('cmd.exe', ['/c', 'npx', 'vitest', 'run'], { stdio: 'inherit' });
 } else {
   execFileSync('npx', ['vitest', 'run'], { stdio: 'inherit' });
 }
 
-console.log('2/5 Checking built artifacts & game.contract.json v1.1...');
+console.log('2/6 Checking built artifacts & game.contract.json v1.2...');
 assert(fs.existsSync('dist/index.html'), 'Missing dist/index.html (run npm run build)');
 assert(fs.existsSync('dist-headless/cli.mjs'), 'Missing dist-headless/cli.mjs (run npm run build)');
 const contract = JSON.parse(fs.readFileSync('game.contract.json', 'utf8'));
-assert(contract.contract_version === '1.1', `Expected contract_version 1.1, got ${contract.contract_version}`);
+assert(contract.contract_version === '1.2', `Expected contract_version 1.2, got ${contract.contract_version}`);
 
 const cli = path.resolve('dist-headless/cli.mjs');
 
-console.log('3/5 Running Phase 1 regression scenarios under v1.1 normalized tuning...');
+console.log('3/6 Running Phase 1 regression scenarios under v1.2 rules...');
 const p1Dir = path.resolve('docs/proof/phase1-scenarios');
 
 // P1-A: Win all lit (pickup, pulse, deposit, lantern_lit, all_lit)
@@ -70,7 +70,11 @@ const winLines = runHeadless(cli, {
   out: path.join(p1Dir, 'out-win-all-lit.jsonl')
 });
 const winEnd = winLines.at(-1);
-assert(winEnd?.type === 'end' && winEnd?.state === 'won', `win-all-lit expected won, got ${JSON.stringify(winEnd)}`);
+const winOver = winLines.find((l) => l.type === 'event' && l.name === 'game_over');
+assert(
+  winEnd?.type === 'end' && winEnd?.state === 'won' && winOver?.data?.reason === 'dawn_survived',
+  `win-all-lit expected won/dawn_survived, got end=${JSON.stringify(winEnd)}, over=${JSON.stringify(winOver)}`
+);
 const winEvents = winLines.filter((l) => l.type === 'event').map((e) => e.name);
 for (const expected of ['mote_picked', 'pulse', 'deposit', 'lantern_lit', 'game_over']) {
   assert(winEvents.includes(expected), `win-all-lit missing event ${expected}`);
@@ -129,7 +133,7 @@ assert(
 );
 console.log(`  - fall-edge: PASS (tick=${fallEvent.tick}, lost=${fallEvent.data.lost}, respawned=[0,0,0])`);
 
-console.log('4/5 Running Phase 2 feature scenarios (Dash, Charm, Drifter, Night 2, Night 3, Pause)...');
+console.log('4/6 Running Phase 2 feature scenarios under v1.2 (Dash, Charm, Drifter, Night 2, Night 3, Pause)...');
 const p2Dir = path.resolve('docs/proof/phase2-scenarios');
 
 // P2-1: Dash (midair Y constant, cooldown respected, re-ready after 90 ticks)
@@ -245,8 +249,108 @@ assert(
 );
 console.log(`  - pause-resume: PASS (frozenSimTick=${pSnap15.sim_tick}, resumedSimTick=${pSnap45.sim_tick})`);
 
-console.log('5/5 Checking Night 1-3 determinism & 21,600-tick Night 3 CLI benchmark (<= 30s)...');
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ddl-det-v11-'));
+console.log('5/6 Running Phase 3 Contract v1.2 scenarios (Fuel, Drain+Pulse, Dawn Survived, Capacity Scaling)...');
+const p3Dir = path.resolve('docs/proof/phase3-scenarios');
+
+// P3-1: Fuel decay -> lantern_out -> relight (5 motes) + refuel (skipping 100-fuel L2)
+const p3FuelLines = runHeadless(cli, {
+  seed: 301,
+  night: 1,
+  scenario: path.join(p3Dir, 'fuel-refuel-relight.scenario.json'),
+  inputs: path.join(p3Dir, 'fuel-refuel-relight.inputs.json'),
+  ticks: 80,
+  snapshotEvery: 10,
+  out: path.join(p3Dir, 'out-fuel-refuel-relight.jsonl')
+});
+const p3Refuel = p3FuelLines.find((l) => l.type === 'event' && l.name === 'refuel');
+const p3Out = p3FuelLines.find((l) => l.type === 'event' && l.name === 'lantern_out');
+const p3Relit = p3FuelLines.find((l) => l.type === 'event' && l.name === 'lantern_lit');
+assert(
+  p3Refuel?.data?.lantern_id === 'L3' &&
+    p3Refuel?.data?.amount === 2 &&
+    p3Refuel?.data?.fuel === 100 &&
+    p3Out?.data?.lantern_id === 'L1' &&
+    p3Relit?.data?.lantern_id === 'L1' &&
+    p3Relit?.data?.relight === true,
+  `fuel-refuel-relight failed: refuel=${JSON.stringify(p3Refuel)}, out=${JSON.stringify(p3Out)}, relit=${JSON.stringify(p3Relit)}`
+);
+console.log(
+  `  - fuel-refuel-relight: PASS (refuel=L3 +${p3Refuel.data.amount}motes->100, out=L1@t${p3Out.tick}, relit=L1@t${p3Relit.tick})`
+);
+
+// P3-2: Shade wander->drain -> fuel_drain (60 ticks), +15 stun on drain Shade, refuel >= 30 pushes Shade out
+const p3DrainLines = runHeadless(cli, {
+  seed: 302,
+  night: 1,
+  scenario: path.join(p3Dir, 'shade-drain-pulse.scenario.json'),
+  inputs: path.join(p3Dir, 'shade-drain-pulse.inputs.json'),
+  ticks: 215,
+  snapshotEvery: 10,
+  out: path.join(p3Dir, 'out-shade-drain-pulse.jsonl')
+});
+const p3PulseSnap = p3DrainLines.find((l) => l.type === 'snapshot' && l.tick === 10);
+const p3FuelDrain = p3DrainLines.find((l) => l.type === 'event' && l.name === 'fuel_drain');
+const p3DrainRefuel = p3DrainLines.find((l) => l.type === 'event' && l.name === 'refuel');
+const p3FinalSnap = p3DrainLines.filter((l) => l.type === 'snapshot').at(-1);
+const s1Final = p3FinalSnap?.shades?.find((s) => s.id === 'S1');
+const s1DistToL2 = s1Final ? Math.hypot(s1Final.pos[0], s1Final.pos[2]) : 0;
+assert(
+  p3DrainLines.some((l) => l.type === 'event' && l.name === 'pulse' && l.data?.stunned_ids?.includes('S2')) &&
+    p3PulseSnap?.score === 15 &&
+    p3FuelDrain?.data?.lantern_id === 'L2' &&
+    p3FuelDrain?.data?.shade_id === 'S1' &&
+    p3DrainRefuel?.data?.lantern_id === 'L2' &&
+    p3DrainRefuel?.data?.fuel >= 30 &&
+    s1DistToL2 >= 5.95,
+  `shade-drain-pulse failed: snap10=${JSON.stringify(p3PulseSnap)}, drain=${JSON.stringify(p3FuelDrain)}, refuel=${JSON.stringify(p3DrainRefuel)}, s1Dist=${s1DistToL2}`
+);
+console.log(
+  `  - shade-drain-pulse: PASS (drainStunScore=${p3PulseSnap.score}, fuel_drain@t${p3FuelDrain.tick}, safePushDist=${s1DistToL2.toFixed(2)}m)`
+);
+
+// P3-3: Dawn survival threshold (3/5 Night 1 -> dawn_survived exact score 537)
+const p3DawnLines = runHeadless(cli, {
+  seed: 303,
+  night: 1,
+  scenario: path.join(p3Dir, 'dawn-survived-threshold.scenario.json'),
+  ticks: 80,
+  snapshotEvery: 20,
+  out: path.join(p3Dir, 'out-dawn-survived-threshold.jsonl')
+});
+const p3DawnEnd = p3DawnLines.at(-1);
+const p3DawnOver = p3DawnLines.find((l) => l.type === 'event' && l.name === 'game_over');
+assert(
+  p3DawnEnd?.type === 'end' &&
+    p3DawnEnd?.state === 'won' &&
+    p3DawnOver?.data?.reason === 'dawn_survived' &&
+    p3DawnEnd?.score === 537,
+  `dawn-survived-threshold failed: end=${JSON.stringify(p3DawnEnd)}, over=${JSON.stringify(p3DawnOver)}`
+);
+console.log(`  - dawn-survived-threshold: PASS (reason=dawn_survived, score=${p3DawnEnd.score})`);
+
+// P3-4: Dynamic capacity scaling (10 -> 12 after 1 lit lantern, caps at 12 motes out of 13)
+const p3CapLines = runHeadless(cli, {
+  seed: 304,
+  night: 1,
+  scenario: path.join(p3Dir, 'capacity-scaling.scenario.json'),
+  inputs: path.join(p3Dir, 'capacity-scaling.inputs.json'),
+  ticks: 180,
+  snapshotEvery: 20,
+  out: path.join(p3Dir, 'out-capacity-scaling.jsonl')
+});
+const p3CapFinal = p3CapLines.filter((l) => l.type === 'snapshot').at(-1);
+assert(
+  p3CapFinal?.player?.capacity === 12 &&
+    p3CapFinal?.player?.carried === 12 &&
+    p3CapFinal?.motes?.length === 1,
+  `capacity-scaling failed: final=${JSON.stringify(p3CapFinal?.player)}, remainingMotes=${p3CapFinal?.motes?.length}`
+);
+console.log(
+  `  - capacity-scaling: PASS (capacity=${p3CapFinal.player.capacity}, carried=${p3CapFinal.player.carried}, leftoverMotes=${p3CapFinal.motes.length})`
+);
+
+console.log('6/6 Checking Night 1-3 determinism & 21,600-tick Night 3 CLI benchmark (<= 30s)...');
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ddl-det-v12-'));
 try {
   for (const night of [1, 2, 3]) {
     const det1 = path.join(tmpDir, `n${night}_1.jsonl`);
@@ -260,7 +364,7 @@ try {
   const benchScenario = path.join(tmpDir, 'bench.scenario.json');
   fs.writeFileSync(
     benchScenario,
-    JSON.stringify({ player: { pos: [0, 6, 4], flames: 999 }, wind_enabled: true })
+    JSON.stringify({ player: { pos: [0, 6, 4], flames: 999 }, wind_enabled: true, time_left_s: 360 })
   );
   const benchOut = path.join(tmpDir, 'bench21600.jsonl');
   const t0 = Date.now();
@@ -285,4 +389,4 @@ try {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
-console.log('ALL PHASE 2 VERIFICATION CHECKS PASSED.');
+console.log('ALL PHASE 3 CONTRACT v1.2 VERIFICATION CHECKS PASSED.');

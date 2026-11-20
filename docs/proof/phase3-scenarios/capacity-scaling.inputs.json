@@ -1,0 +1,9 @@
+{
+  "frames": [
+    { "tick": 0, "interact": false },
+    { "tick": 1, "interact": true },
+    { "tick": 2, "interact": false },
+    { "tick": 3, "move": [0, 1] },
+    { "tick": 170, "move": [0, 0] }
+  ]
+}
