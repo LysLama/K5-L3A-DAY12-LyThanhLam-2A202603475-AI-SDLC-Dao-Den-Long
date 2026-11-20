@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { mapKeysToInput } from '../../src/client/inputMapper';
+import {
+  DEFAULT_KEYBINDINGS,
+  detectKeyConflict,
+  formatKeyCodeLabel,
+  mapKeysToInput,
+  type KeyAction,
+  type KeyBindings
+} from '../../src/client/inputMapper';
 import { createWorld } from '../../src/sim/world';
 import { stepTick } from '../../src/sim/step';
 
-describe('client input mapping parity', () => {
+describe('client input mapping parity & remappable accessibility bindings', () => {
   it('maps WASD and action keys to Test Contract InputState with right-handed camera parity', () => {
     const forward = mapKeysToInput(new Set(['KeyW']), 0);
     expect(forward.move).toEqual([0, 1]);
@@ -53,5 +60,55 @@ describe('client input mapping parity', () => {
     // Right vector in Y-up RH coordinates equals forward x up = (-fz, fx)
     expect(rx).toBeCloseTo(-fz, 6);
     expect(rz).toBeCloseTo(fx, 6);
+  });
+
+  it('supports custom 9-action remappings and ShiftRight equivalence when ShiftLeft is bound', () => {
+    const custom: KeyBindings = {
+      ...DEFAULT_KEYBINDINGS,
+      up: 'KeyI',
+      down: 'KeyK',
+      left: 'KeyJ',
+      right: 'KeyL',
+      jump: 'KeyU',
+      dash: 'KeyO',
+      interact: 'KeyG',
+      pulse: 'KeyT',
+      pause: 'KeyB'
+    };
+
+    const out = mapKeysToInput(new Set(['KeyI', 'KeyO', 'KeyG']), 0, false, false, custom);
+    expect(out.move).toEqual([0, 1]);
+    expect(out.dash).toBe(true);
+    expect(out.interact).toBe(true);
+    // Default keys W / Q should no longer trigger once rebound away
+    const legacy = mapKeysToInput(new Set(['KeyW', 'KeyQ']), 0, false, false, custom);
+    expect(legacy.move).toEqual([0, 0]);
+    expect(legacy.pulse).toBe(false);
+
+    // Default ShiftLeft accepts ShiftRight seamlessly
+    const shiftRight = mapKeysToInput(new Set(['ShiftRight']), 0, false, false, DEFAULT_KEYBINDINGS);
+    expect(shiftRight.dash).toBe(true);
+
+    // Rebinding another action onto KeyF disables secondary interact alias KeyF
+    const dashF: KeyBindings = { ...DEFAULT_KEYBINDINGS, dash: 'KeyF' };
+    const fPressed = mapKeysToInput(new Set(['KeyF']), 0, false, false, dashF);
+    expect(fPressed.dash).toBe(true);
+    expect(fPressed.interact).toBe(false);
+  });
+
+  it('detects duplicate key assignments across the 9 remappable actions and formats human labels', () => {
+    const conflict = detectKeyConflict(DEFAULT_KEYBINDINGS, 'jump', 'KeyE');
+    expect(conflict).toBe<KeyAction>('interact');
+
+    // Rebinding an action to its own current key is NOT a conflict
+    expect(detectKeyConflict(DEFAULT_KEYBINDINGS, 'jump', 'Space')).toBeNull();
+    // Binding ShiftRight when dash is ShiftLeft conflicts
+    expect(detectKeyConflict(DEFAULT_KEYBINDINGS, 'pulse', 'ShiftRight')).toBe<KeyAction>('dash');
+    // Unassigned key like KeyZ has no conflict
+    expect(detectKeyConflict(DEFAULT_KEYBINDINGS, 'jump', 'KeyZ')).toBeNull();
+
+    expect(formatKeyCodeLabel('Space')).toBe('Space');
+    expect(formatKeyCodeLabel('ShiftLeft')).toBe('Shift');
+    expect(formatKeyCodeLabel('KeyE')).toBe('E');
   });
 });

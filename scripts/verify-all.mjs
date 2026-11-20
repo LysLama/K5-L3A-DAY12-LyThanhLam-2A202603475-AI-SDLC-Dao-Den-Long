@@ -41,22 +41,25 @@ function runHeadless(cli, opts) {
   return parseJsonl(opts.out);
 }
 
-console.log('1/6 Running Vitest unit & contract suite...');
+console.log('1/7 Running Vitest unit & contract suite...');
 if (process.platform === 'win32') {
   execFileSync('cmd.exe', ['/c', 'npx', 'vitest', 'run'], { stdio: 'inherit' });
 } else {
   execFileSync('npx', ['vitest', 'run'], { stdio: 'inherit' });
 }
 
-console.log('2/6 Checking built artifacts & game.contract.json v1.2...');
+console.log('2/7 Checking built artifacts & game.contract.json v1.3...');
 assert(fs.existsSync('dist/index.html'), 'Missing dist/index.html (run npm run build)');
 assert(fs.existsSync('dist-headless/cli.mjs'), 'Missing dist-headless/cli.mjs (run npm run build)');
+assert(fs.existsSync('dist-app/run.mjs'), 'Missing dist-app/run.mjs (run npm run build)');
+assert(fs.existsSync('dist-app/bench.mjs'), 'Missing dist-app/bench.mjs (run npm run build)');
+assert(fs.existsSync('dist-app/soak.mjs'), 'Missing dist-app/soak.mjs (run npm run build)');
 const contract = JSON.parse(fs.readFileSync('game.contract.json', 'utf8'));
-assert(contract.contract_version === '1.2', `Expected contract_version 1.2, got ${contract.contract_version}`);
+assert(contract.contract_version === '1.3', `Expected contract_version 1.3, got ${contract.contract_version}`);
 
 const cli = path.resolve('dist-headless/cli.mjs');
 
-console.log('3/6 Running Phase 1 regression scenarios under v1.2 rules...');
+console.log('3/7 Running Phase 1 regression scenarios under v1.3 rules...');
 const p1Dir = path.resolve('docs/proof/phase1-scenarios');
 
 // P1-A: Win at dawn (pickup, pulse, deposit, lantern_lit, dawn_survived)
@@ -133,7 +136,7 @@ assert(
 );
 console.log(`  - fall-edge: PASS (tick=${fallEvent.tick}, lost=${fallEvent.data.lost}, respawned=[0,0,0])`);
 
-console.log('4/6 Running Phase 2 feature scenarios under v1.2 (Dash, Charm, Drifter, Night 2, Night 3, Pause)...');
+console.log('4/7 Running Phase 2 feature scenarios under v1.3 (Dash, Charm, Drifter, Night 2, Night 3, Pause)...');
 const p2Dir = path.resolve('docs/proof/phase2-scenarios');
 
 // P2-1: Dash (midair Y constant, cooldown respected, re-ready after 90 ticks)
@@ -249,7 +252,7 @@ assert(
 );
 console.log(`  - pause-resume: PASS (frozenSimTick=${pSnap15.sim_tick}, resumedSimTick=${pSnap45.sim_tick})`);
 
-console.log('5/6 Running Phase 3 Contract v1.2 scenarios (Fuel, Drain+Pulse, Dawn Survived, Capacity Scaling)...');
+console.log('5/7 Running Phase 3 Contract v1.3 scenarios (Fuel, Drain+Pulse, Dawn Survived, Capacity Scaling)...');
 const p3Dir = path.resolve('docs/proof/phase3-scenarios');
 
 // P3-1: Fuel decay -> lantern_out -> relight (5 motes) + refuel (skipping 100-fuel L2)
@@ -349,8 +352,8 @@ console.log(
   `  - capacity-scaling: PASS (capacity=${p3CapFinal.player.capacity}, carried=${p3CapFinal.player.carried}, leftoverMotes=${p3CapFinal.motes.length})`
 );
 
-console.log('6/6 Checking Night 1-3 determinism & 21,600-tick Night 3 CLI benchmark (<= 30s)...');
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ddl-det-v12-'));
+console.log('6/7 Checking Night 1-3 determinism & 21,600-tick Night 3 CLI benchmark (<= 30s)...');
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ddl-det-v13-'));
 try {
   for (const night of [1, 2, 3]) {
     const det1 = path.join(tmpDir, `n${night}_1.jsonl`);
@@ -385,8 +388,76 @@ try {
   console.log(
     `  - Night 1-3 determinism + Night 3 21,600-tick CLI benchmark: PASS (${benchEnd.ticks} ticks in ${elapsedMs}ms <= 30000ms)`
   );
+
+  console.log('7/7 Checking Phase 4 (Contract v1.3) leaderboard export, 10-night soak & bench/soak reports...');
+  const runCli = path.resolve('dist-app/run.mjs');
+  const soakCli = path.resolve('dist-app/soak.mjs');
+
+  const emptyLbFile = path.join(tmpDir, 'empty-lb.json');
+  const emptyLbOut = path.join(tmpDir, 'exported-empty.json');
+  runCommand('node', [runCli, '--leaderboard-file', emptyLbFile, '--export-leaderboard', emptyLbOut]);
+  const exportedEmpty = JSON.parse(fs.readFileSync(emptyLbOut, 'utf8'));
+  assert(
+    Array.isArray(exportedEmpty.entries) && exportedEmpty.entries.length === 0,
+    `Expected empty leaderboard export, got ${JSON.stringify(exportedEmpty)}`
+  );
+
+  const populatedLbFile = path.join(tmpDir, 'populated-lb.json');
+  fs.writeFileSync(
+    populatedLbFile,
+    JSON.stringify({
+      entries: [
+        { name: 'May', score: 1200, nights_won: 3, achieved_at: '2026-11-20T21:00:00+07:00', seed: 42 },
+        { name: 'OngDang', score: 1500, nights_won: 3, achieved_at: '2026-11-20T21:05:00+07:00', seed: 99 }
+      ]
+    })
+  );
+  const populatedLbOut = path.join(tmpDir, 'exported-populated.json');
+  runCommand('node', [runCli, '--leaderboard-file', populatedLbFile, '--export-leaderboard', populatedLbOut]);
+  const exportedPopulated = JSON.parse(fs.readFileSync(populatedLbOut, 'utf8'));
+  assert(
+    exportedPopulated.entries?.length === 2 && exportedPopulated.entries[0].name === 'OngDang',
+    `Expected sorted leaderboard export, got ${JSON.stringify(exportedPopulated)}`
+  );
+  console.log('  - Leaderboard CLI export (empty + sorted): PASS');
+
+  const liveSoakOut = path.join(tmpDir, 'soak-verify.json');
+  runCommand('node', [soakCli, '--seed', '7', '--nights', '10', '--out', liveSoakOut]);
+  const liveSoak = JSON.parse(fs.readFileSync(liveSoakOut, 'utf8'));
+  assert(
+    liveSoak.nights === 10 &&
+      liveSoak.crashes === 0 &&
+      Array.isArray(liveSoak.results) &&
+      liveSoak.results.length === 10 &&
+      liveSoak.mem_end_mb <= Math.max(liveSoak.mem_start_mb * 1.2, liveSoak.mem_start_mb + 15),
+    `Live 10-night soak check failed: ${JSON.stringify(liveSoak)}`
+  );
+  console.log(
+    `  - Live 10-night soak test: PASS (crashes=0, mem ${liveSoak.mem_start_mb}->${liveSoak.mem_end_mb} MB in ${liveSoak.duration_s}s)`
+  );
+
+  assert(fs.existsSync('bench.json'), 'Missing committed bench.json');
+  const benchReport = JSON.parse(fs.readFileSync('bench.json', 'utf8'));
+  assert(
+    benchReport.contract_version === '1.3' &&
+      benchReport.avg_fps >= 60 &&
+      benchReport.p1_low_fps >= 30 &&
+      benchReport.load_ms <= 10000,
+    `Committed bench.json did not meet v1.3 thresholds: ${JSON.stringify(benchReport)}`
+  );
+  assert(fs.existsSync('soak.json'), 'Missing committed soak.json');
+  const soakReport = JSON.parse(fs.readFileSync('soak.json', 'utf8'));
+  assert(
+    soakReport.nights === 10 &&
+      soakReport.crashes === 0 &&
+      soakReport.mem_end_mb <= soakReport.mem_start_mb * 1.2,
+    `Committed soak.json did not meet v1.3 thresholds: ${JSON.stringify(soakReport)}`
+  );
+  console.log(
+    `  - Committed bench.json & soak.json thresholds: PASS (avg_fps=${benchReport.avg_fps}, p1_low_fps=${benchReport.p1_low_fps}, load_ms=${benchReport.load_ms})`
+  );
 } finally {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
-console.log('ALL PHASE 3 CONTRACT v1.2 VERIFICATION CHECKS PASSED.');
+console.log('ALL PHASE 4 CONTRACT v1.3 VERIFICATION CHECKS PASSED.');

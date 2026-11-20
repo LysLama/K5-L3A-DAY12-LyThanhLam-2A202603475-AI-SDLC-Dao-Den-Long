@@ -4,6 +4,7 @@ import {
   INITIAL_MOTE_COUNT,
   PULSE_STUN_TICKS,
   RECOIL_TICKS,
+  SHADE_DEFAULT_Y_OFFSET,
   SHADE_SPAWNING_TICKS,
   TUNING
 } from './constants';
@@ -349,8 +350,89 @@ export function createWorld(
       pulse: false,
       dash: false,
       pause: false
-    }
+    },
+    benchMode: false
   };
+}
+
+/**
+ * Initializes the deterministic Contract v1.3 benchmark scene:
+ * Night 1, Mây stationary at (0,0,0), L1-L3 lit (fuel 100), L4-L5 unlit,
+ * 200 Shades in wander across the island, and 100 firefly motes.
+ */
+export function createBenchWorld(seed = 42): SimState {
+  const state = createWorld(
+    seed,
+    {
+      player: { pos: [0, 0, 0], carried: 0, flames: TUNING.flames },
+      random_motes: false,
+      random_shades: false,
+      random_drifters: false,
+      motes: [],
+      shades: [],
+      lanterns: [
+        { id: 'L1', lit: true, fuel: 100 },
+        { id: 'L2', lit: true, fuel: 100 },
+        { id: 'L3', lit: true, fuel: 100 },
+        { id: 'L4', lit: false, deposited: 0 },
+        { id: 'L5', lit: false, deposited: 0 }
+      ]
+    },
+    1
+  );
+
+  const litLanterns = state.lanterns.filter((l) => l.lit);
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+
+  // Spawn 200 wander Shades distributed evenly via sunflower spiral + seeded jitter, outside L1-L3 safe zones
+  let attempt = 0;
+  while (state.shades.length < 200 && attempt < 2000) {
+    const idx = attempt++;
+    const baseR = Math.sqrt((idx + 0.5) / 220) * 36.5 + 1.5;
+    const r = Math.min(37.5, Math.max(2.5, baseR + (state.rng() - 0.5) * 1.4));
+    const theta = idx * goldenAngle + (state.rng() - 0.5) * 0.25;
+    const x = round3(Math.cos(theta) * r);
+    const z = round3(Math.sin(theta) * r);
+    const pt: Vec3 = [x, 0, z];
+    if (litLanterns.some((l) => distXZ(pt, l.pos) < TUNING.safe_radius + 0.25)) continue;
+    const wAngle = state.rng() * Math.PI * 2;
+    state.shades.push({
+      id: `S${state.shades.length + 1}`,
+      pos: [x, SHADE_DEFAULT_Y_OFFSET, z],
+      state: 'wander',
+      stateTicksLeft: 0,
+      pushTicksLeft: 0,
+      pushDir: [1, 0],
+      recoilDir: [1, 0],
+      safePushTicksLeft: 0,
+      wanderDir: [Math.cos(wAngle), Math.sin(wAngle)],
+      wanderTimerTicks: 30 + Math.floor(state.rng() * 90),
+      targetLanternId: null,
+      drainTicks: 0,
+      createdTick: 0
+    });
+  }
+
+  // Spawn 100 evenly distributed fireflies (permitted above normal gameplay cap in bench)
+  for (let i = 0; i < 100; i++) {
+    const r = Math.min(37.5, Math.max(2.0, Math.sqrt((i + 0.5) / 100) * 37.0 + (state.rng() - 0.5) * 1.2));
+    const theta = i * goldenAngle + 0.7 + (state.rng() - 0.5) * 0.2;
+    state.motes.push({
+      id: `M${i + 1}`,
+      pos: [round3(Math.cos(theta) * r), 0, round3(Math.sin(theta) * r)],
+      kind: 'random',
+      ttlTicks: null,
+      createdTick: 0
+    });
+  }
+
+  // Pre-sort lexicographically by id so sortedIds() hits zero-allocation fast path every tick
+  state.shades.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  state.motes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  state.nextShadeSeq = 201;
+  state.nextMoteSeq = 101;
+  state.benchMode = true;
+  return state;
 }
 
 export function buildSnapshot(state: SimState): SimSnapshot {

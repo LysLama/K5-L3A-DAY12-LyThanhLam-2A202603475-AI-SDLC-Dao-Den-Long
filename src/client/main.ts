@@ -1,22 +1,37 @@
 import './style.css';
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { DT } from '../sim/constants';
 import { getMapConfig } from '../sim/maps';
 import { stepTick } from '../sim/step';
-import type { NightId, SimEvent, SimState, Vec3 } from '../sim/types';
-import { createWorld } from '../sim/world';
+import type { InputState, NightId, SimEvent, SimState, Vec3 } from '../sim/types';
+import { createBenchWorld, createWorld } from '../sim/world';
 import { Soundscape } from './audio';
+import { computeBenchCameraPosition } from './benchOrbit';
 import { ThirdPersonCamera } from './camera';
 import { type GameSettings, HudController, type UiScreen } from './hud';
-import { mapKeysToInput } from './inputMapper';
+import {
+  DEFAULT_KEYBINDINGS,
+  KEY_ACTION_ORDER,
+  type KeyBindings,
+  mapKeysToInput
+} from './inputMapper';
 import { IslandScene } from './sceneBuilder';
 
 const SEED_BASE = 20261120;
 const SETTINGS_KEY = 'ddl_settings_v2';
+
+function mergeKeybindings(raw: unknown): KeyBindings {
+  const out: KeyBindings = { ...DEFAULT_KEYBINDINGS };
+  if (raw && typeof raw === 'object') {
+    const rec = raw as Record<string, unknown>;
+    for (const action of KEY_ACTION_ORDER) {
+      if (typeof rec[action] === 'string' && rec[action].length > 0) {
+        out[action] = rec[action] as string;
+      }
+    }
+  }
+  return out;
+}
 
 function loadSettings(): GameSettings {
   try {
@@ -29,13 +44,23 @@ function loadSettings(): GameSettings {
           typeof parsed.sensitivity === 'number'
             ? Math.max(40, Math.min(200, parsed.sensitivity))
             : 100,
-        colorblind: typeof parsed.colorblind === 'boolean' ? parsed.colorblind : false
+        colorblind: typeof parsed.colorblind === 'boolean' ? parsed.colorblind : false,
+        reduceMotion: typeof parsed.reduceMotion === 'boolean' ? parsed.reduceMotion : false,
+        largeText: typeof parsed.largeText === 'boolean' ? parsed.largeText : false,
+        keybindings: mergeKeybindings(parsed.keybindings)
       };
     }
   } catch {
     // ignore storage restriction
   }
-  return { volume: 75, sensitivity: 100, colorblind: false };
+  return {
+    volume: 75,
+    sensitivity: 100,
+    colorblind: false,
+    reduceMotion: false,
+    largeText: false,
+    keybindings: { ...DEFAULT_KEYBINDINGS }
+  };
 }
 
 function saveSettings(settings: GameSettings): void {
@@ -53,9 +78,6 @@ class GameApp {
   private readonly audio = new Soundscape();
   private readonly hud: HudController;
   private readonly pressedKeys = new Set<string>();
-
-  private composer: EffectComposer | null = null;
-  private renderPass: RenderPass | null = null;
 
   private settings: GameSettings = loadSettings();
   private screen: UiScreen = 'menu';
@@ -83,6 +105,14 @@ class GameApp {
   private dtSamples: number[] = [];
   private fpsAvg = 60;
 
+  private readonly benchConfig: { active: boolean; seed: number; durationS: number };
+  private benchReadySent = false;
+  private benchSubmitted = false;
+  private benchStartPerfMs = 0;
+  private benchMeasureStartMs = 0;
+  private benchPrevFrameMs = 0;
+  private readonly benchDtsMs: number[] = [];
+
   private readonly onKeyDown: (e: KeyboardEvent) => void;
   private readonly onKeyUp: (e: KeyboardEvent) => void;
   private readonly onContextMenu: (e: MouseEvent) => void;
@@ -90,11 +120,23 @@ class GameApp {
   private readonly onBlur: () => void;
 
   constructor(private readonly mountEl: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    const params = new URLSearchParams(window.location.search);
+    this.benchConfig = {
+      active: params.get('bench') === '1',
+      seed: Number.parseInt(params.get('seed') ?? '42', 10) || 42,
+      durationS: Math.max(1, Number.parseFloat(params.get('duration') ?? '30') || 30)
+    };
+
+    this.renderer = new THREE.WebGLRenderer({
+      alpha: false,
+      antialias: false,
+      stencil: false,
+      powerPreference: 'high-performance'
+    });
+    this.renderer.setPixelRatio(this.benchConfig.active ? 1 : Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.NoToneMapping;
     this.mountEl.appendChild(this.renderer.domElement);
 
     this.camera = new THREE.PerspectiveCamera(
@@ -107,14 +149,19 @@ class GameApp {
 
     this.audio.setVolume(this.settings.volume / 100);
     this.camRig.setSensitivity(this.settings.sensitivity / 100);
+    this.camRig.setReduceMotion(this.settings.reduceMotion);
 
-    this.state = createWorld(SEED_BASE, undefined, 1);
+    this.state = this.benchConfig.active
+      ? createBenchWorld(this.benchConfig.seed)
+      : createWorld(SEED_BASE, undefined, 1);
     const mapCfg = getMapConfig(1);
     this.camRig.reset(mapCfg.spawnPos, mapCfg.spawnFacing);
     this.prevPlayerPos = [...this.state.player.pos];
+    this.prevShadePositions.clear();
+    this.prevDrifterPositions.clear();
     this.snapshotPrevActors();
     this.worldScene = new IslandScene(this.state);
-    this.setupComposer();
+    this.renderer.compile(this.worldScene.scene, this.camera);
 
     this.hud = new HudController(this.settings, {
       onStartCampaign: () => {
@@ -165,26 +212,35 @@ class GameApp {
         saveSettings(next);
         this.audio.setVolume(next.volume / 100);
         this.camRig.setSensitivity(next.sensitivity / 100);
+        this.camRig.setReduceMotion(next.reduceMotion);
       }
     });
 
-    this.hud.showScreen('menu', 1);
+    this.screen = this.benchConfig.active ? 'bench' : 'menu';
+    this.hud.showScreen(this.screen, 1);
 
     this.onKeyDown = (e: KeyboardEvent) => {
+      if (this.benchConfig.active) return;
+      if (this.hud.isCapturingKeybind()) return;
+      const targetTag = (e.target as HTMLElement | null)?.tagName;
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') return;
+
       this.audio.unlock();
-      if (e.repeat && ['KeyP', 'Escape', 'KeyM', 'KeyH', 'Enter'].includes(e.code)) return;
-      if (e.code === 'KeyP' || e.code === 'Escape') {
+      const pauseCode = this.settings.keybindings.pause;
+      const boundSet = new Set(Object.values(this.settings.keybindings));
+      if (e.repeat && [pauseCode, 'KeyP', 'Escape', 'KeyM', 'KeyH', 'Enter'].includes(e.code)) return;
+      if (e.code === pauseCode || e.code === 'Escape') {
         if (this.screen === 'playing' || this.screen === 'paused') {
           this.togglePause();
         }
         return;
       }
-      if (e.code === 'KeyM') {
+      if (e.code === 'KeyM' && !(this.screen === 'playing' && boundSet.has('KeyM'))) {
         this.hud.setMuted(this.audio.toggleMute());
         return;
       }
-      if (e.code === 'KeyH') {
-        if (this.screen === 'playing') this.hud.toggleHelp();
+      if (e.code === 'KeyH' && this.screen === 'playing' && !boundSet.has('KeyH')) {
+        this.hud.toggleHelp();
         return;
       }
       if (e.code === 'Enter') {
@@ -227,7 +283,6 @@ class GameApp {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
-      this.composer?.setSize(window.innerWidth, window.innerHeight);
     };
 
     this.onBlur = () => {
@@ -250,32 +305,11 @@ class GameApp {
       status: this.state.status,
       score: this.state.score,
       flames: this.state.player.flames,
-      carried: this.state.player.carried
+      carried: this.state.player.carried,
+      renderInfo: this.renderer.info.render
     });
 
     this.startLoop();
-  }
-
-  private setupComposer(): void {
-    try {
-      const composer = new EffectComposer(this.renderer);
-      const renderPass = new RenderPass(this.worldScene.scene, this.camera);
-      const bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        0.4,
-        0.42,
-        0.74
-      );
-      const outputPass = new OutputPass();
-      composer.addPass(renderPass);
-      composer.addPass(bloomPass);
-      composer.addPass(outputPass);
-      this.composer = composer;
-      this.renderPass = renderPass;
-    } catch {
-      this.composer = null;
-      this.renderPass = null;
-    }
   }
 
   private resetWorld(night: NightId): void {
@@ -295,11 +329,11 @@ class GameApp {
     const mapCfg = getMapConfig(night);
     this.camRig.reset(mapCfg.spawnPos, mapCfg.spawnFacing);
     this.prevPlayerPos = [...this.state.player.pos];
+    this.prevShadePositions.clear();
+    this.prevDrifterPositions.clear();
     this.snapshotPrevActors();
     this.worldScene = new IslandScene(this.state);
-    if (this.renderPass) {
-      this.renderPass.scene = this.worldScene.scene;
-    }
+    this.renderer.compile(this.worldScene.scene, this.camera);
   }
 
   private loadNightPreviewMenu(): void {
@@ -364,32 +398,155 @@ class GameApp {
       (sum, v) => sum + (v ?? 0),
       0
     );
-    this.hud.renderResult(this.state, this.campaignMode, campaignTotal);
+    const nightsWon = Object.keys(this.campaignScores).length;
+    this.hud.renderResult(this.state, this.campaignMode, campaignTotal, nightsWon);
     return true;
   }
 
   private snapshotPrevActors(): void {
-    this.prevShadePositions.clear();
     for (const s of this.state.shades) {
-      this.prevShadePositions.set(s.id, [s.pos[0], s.pos[1], s.pos[2]]);
+      const existing = this.prevShadePositions.get(s.id);
+      if (existing) {
+        existing[0] = s.pos[0];
+        existing[1] = s.pos[1];
+        existing[2] = s.pos[2];
+      } else {
+        this.prevShadePositions.set(s.id, [s.pos[0], s.pos[1], s.pos[2]]);
+      }
     }
-    this.prevDrifterPositions.clear();
     for (const d of this.state.drifters) {
-      this.prevDrifterPositions.set(d.id, [d.pos[0], d.pos[1], d.pos[2]]);
+      const existing = this.prevDrifterPositions.get(d.id);
+      if (existing) {
+        existing[0] = d.pos[0];
+        existing[1] = d.pos[1];
+        existing[2] = d.pos[2];
+      } else {
+        this.prevDrifterPositions.set(d.id, [d.pos[0], d.pos[1], d.pos[2]]);
+      }
     }
+  }
+
+  private getWebglRendererDesc(): string {
+    try {
+      const gl = this.renderer.getContext();
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      const gpu = dbg
+        ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL))
+        : String(gl.getParameter(gl.RENDERER));
+      return `Three.js 0.187.0 (${gpu})`;
+    } catch {
+      return 'Three.js 0.187.0 (WebGL2)';
+    }
+  }
+
+  private submitBenchResults(): void {
+    this.benchSubmitted = true;
+    const sumDt = this.benchDtsMs.reduce((a, b) => a + b, 0);
+    const avgFps = sumDt > 0 ? (1000 * this.benchDtsMs.length) / sumDt : 0;
+    const payload = {
+      dtsMs: this.benchDtsMs,
+      vsyncOff: avgFps > 64,
+      renderer: this.getWebglRendererDesc()
+    };
+    void fetch('/api/bench-done', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .catch(() => {})
+      .finally(() => {
+        (window as unknown as { __ddlBenchDone?: boolean }).__ddlBenchDone = true;
+      });
   }
 
   private startLoop(): void {
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     this.lastTimestamp = performance.now();
+    const neutralBenchInput: InputState = {
+      move: [0, 0],
+      cam_yaw_deg: 0,
+      jump: false,
+      interact: false,
+      pulse: false,
+      dash: false,
+      pause: false
+    };
+
     const tickFrame = (now: number) => {
       const rawDt = Math.max(0.0001, (now - this.lastTimestamp) / 1000);
       const frameDt = Math.min(0.1, rawDt);
       this.lastTimestamp = now;
 
+      if (this.benchConfig.active) {
+        if (!this.benchReadySent) {
+          this.benchStartPerfMs = now;
+        }
+        const benchElapsedSec = (now - this.benchStartPerfMs) / 1000;
+        this.elapsedSec = benchElapsedSec;
+        this.accumulator = Math.min(this.accumulator + frameDt, DT * 4);
+        while (this.accumulator >= DT) {
+          this.prevPlayerPos[0] = 0;
+          this.prevPlayerPos[1] = 0;
+          this.prevPlayerPos[2] = 0;
+          this.snapshotPrevActors();
+          stepTick(this.state, neutralBenchInput);
+          this.accumulator -= DT;
+        }
+
+        const [bx, by, bz] = computeBenchCameraPosition(benchElapsedSec);
+        this.camera.position.set(bx, by, bz);
+        this.camera.lookAt(0, 0, 0);
+
+        const alpha = this.accumulator / DT;
+        this.worldScene.sync(this.state, [], {
+          alpha,
+          simDt: frameDt,
+          frameDt,
+          elapsedSec: this.elapsedSec,
+          isMovingInput: false,
+          colorblind: false,
+          cameraPos: [bx, by, bz],
+          prevPlayerPos: this.prevPlayerPos,
+          prevShadePositions: this.prevShadePositions,
+          prevDrifterPositions: this.prevDrifterPositions
+        });
+
+        this.renderer.render(this.worldScene.scene, this.camera);
+
+        if (!this.benchReadySent) {
+          this.benchReadySent = true;
+          void fetch('/api/bench-ready', { method: 'POST' }).catch(() => {});
+        }
+
+        const elapsedMs = now - this.benchStartPerfMs;
+        if (elapsedMs >= 3000 && !this.benchSubmitted) {
+          if (this.benchMeasureStartMs === 0) {
+            this.benchMeasureStartMs = now;
+            this.benchPrevFrameMs = now;
+          } else {
+            this.benchDtsMs.push(Math.max(0.05, now - this.benchPrevFrameMs));
+            this.benchPrevFrameMs = now;
+            if (now - this.benchMeasureStartMs >= this.benchConfig.durationS * 1000) {
+              this.submitBenchResults();
+            }
+          }
+        }
+
+        if (!this.benchSubmitted) {
+          this.rafId = requestAnimationFrame(tickFrame);
+        }
+        return;
+      }
+
       let tickEvents: SimEvent[] = [];
       let simDt = 0;
-      const liveInput = mapKeysToInput(this.pressedKeys, this.camRig.yawDeg, false, false);
+      const liveInput = mapKeysToInput(
+        this.pressedKeys,
+        this.camRig.yawDeg,
+        false,
+        false,
+        this.settings.keybindings
+      );
       const isPlaying = this.screen === 'playing' && this.state.status === 'playing';
       const isMovingInput = isPlaying && (liveInput.move[0] !== 0 || liveInput.move[1] !== 0);
 
@@ -420,7 +577,8 @@ class GameApp {
             this.pressedKeys,
             this.camRig.yawDeg,
             this.rightPulseQueued,
-            false
+            false,
+            this.settings.keybindings
           );
           this.rightPulseQueued = false;
           const evs = stepTick(this.state, input);
@@ -488,14 +646,20 @@ class GameApp {
         prevDrifterPositions: this.prevDrifterPositions
       });
 
-      this.camRig.update(this.camera, renderPlayerPos, isPlaying ? this.pressedKeys : new Set(), frameDt);
+      const boundKeys = new Set(Object.values(this.settings.keybindings));
+      const camTurnKeys = new Set<string>();
+      if (isPlaying) {
+        if (this.pressedKeys.has('ArrowLeft') && !boundKeys.has('ArrowLeft')) {
+          camTurnKeys.add('ArrowLeft');
+        }
+        if (this.pressedKeys.has('ArrowRight') && !boundKeys.has('ArrowRight')) {
+          camTurnKeys.add('ArrowRight');
+        }
+      }
+      this.camRig.update(this.camera, renderPlayerPos, camTurnKeys, frameDt);
       this.hud.update(this.state, frameDt, this.camera, this.screen === 'playing' || this.screen === 'paused');
 
-      if (this.composer) {
-        this.composer.render();
-      } else {
-        this.renderer.render(this.worldScene.scene, this.camera);
-      }
+      this.renderer.render(this.worldScene.scene, this.camera);
 
       this.rafId = requestAnimationFrame(tickFrame);
     };
@@ -512,7 +676,6 @@ class GameApp {
     this.camRig.dispose();
     this.worldScene.dispose();
     this.audio.dispose();
-    this.composer?.dispose();
     this.renderer.dispose();
   }
 }

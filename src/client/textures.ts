@@ -8,15 +8,15 @@ export function createGlowTexture(
   midRgba = 'rgba(255,179,71,0.65)'
 ): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
+  canvas.width = 64;
+  canvas.height = 64;
   const ctx = canvas.getContext('2d')!;
-  const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
   grad.addColorStop(0, innerRgba);
   grad.addColorStop(0.28, midRgba);
   grad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 128, 128);
+  ctx.fillRect(0, 0, 64, 64);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;

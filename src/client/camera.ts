@@ -13,6 +13,7 @@ export class ThirdPersonCamera {
   private currentTarget = new THREE.Vector3(0, 1.4, 0);
   private shakeTime = 0;
   private shakeIntensity = 0;
+  private reduceMotion = false;
 
   private readonly onMouseDown: (e: MouseEvent) => void;
   private readonly onMouseMove: (e: MouseEvent) => void;
@@ -54,6 +55,14 @@ export class ThirdPersonCamera {
     this.sensitivity = Math.max(0.3, Math.min(2.5, sens));
   }
 
+  setReduceMotion(enabled: boolean): void {
+    this.reduceMotion = enabled;
+    if (enabled) {
+      this.shakeTime = 0;
+      this.shakeIntensity = 0;
+    }
+  }
+
   reset(spawnPos: Vec3 = [0, 0, 0], spawnFacing: Vec2 = [0, 1]): void {
     this.yawDeg = (Math.atan2(spawnFacing[0], spawnFacing[1]) * 180) / Math.PI;
     this.pitchDeg = 24;
@@ -77,6 +86,7 @@ export class ThirdPersonCamera {
   }
 
   triggerShake(intensity: number, duration = 0.25): void {
+    if (this.reduceMotion) return;
     this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
     this.shakeTime = Math.max(this.shakeTime, duration);
   }
@@ -111,12 +121,15 @@ export class ThirdPersonCamera {
     this.currentTarget.lerp(desiredTarget, alpha);
 
     camera.position.copy(this.currentPos);
-    if (this.shakeTime > 0) {
+    if (!this.reduceMotion && this.shakeTime > 0) {
       this.shakeTime = Math.max(0, this.shakeTime - dt);
       const decay = this.shakeTime * 4 * this.shakeIntensity;
       camera.position.x += Math.sin(this.shakeTime * 75) * decay;
       camera.position.y += Math.cos(this.shakeTime * 90) * decay * 0.6;
       if (this.shakeTime === 0) this.shakeIntensity = 0;
+    } else if (this.reduceMotion) {
+      this.shakeTime = 0;
+      this.shakeIntensity = 0;
     }
     camera.lookAt(this.currentTarget);
   }
