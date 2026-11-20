@@ -183,6 +183,7 @@ export interface SimState {
   randomMotes: boolean;
   randomShades: boolean;
   randomDrifters: boolean;
+  benchMode?: boolean;
   initialShadeSpawned: boolean;
   nextShadeSpawnTick: number;
   nextMoteSeq: number;

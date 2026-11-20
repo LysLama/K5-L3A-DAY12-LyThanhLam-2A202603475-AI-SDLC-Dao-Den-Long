@@ -234,7 +234,9 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
 
   // 2. Decrement timers, cooldowns, charm, wind, TTLs
   state.simTick += 1;
-  state.timeLeftS = Math.max(0, state.initialTimeLeftS - state.simTick / 60);
+  if (!state.benchMode) {
+    state.timeLeftS = Math.max(0, state.initialTimeLeftS - state.simTick / 60);
+  }
   p.invulnTicks = Math.max(0, p.invulnTicks - 1);
   p.dashCdTicks = Math.max(0, p.dashCdTicks - 1);
   p.pulseCdTicks = Math.max(0, p.pulseCdTicks - 1);
@@ -306,58 +308,60 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
   }
 
   // Step 2b: Subtract natural fuel decay + drain; extinguish fuel <= 0 -> lantern_out
-  const drainingShadesByLantern = new Map<string, ShadeState[]>();
-  for (const shade of sortedIds(state.shades)) {
-    if (shade.state === 'drain' && shade.targetLanternId !== null) {
-      const target = state.lanterns.find((l) => l.id === shade.targetLanternId);
-      if (target && target.lit) {
-        shade.drainTicks += 1;
-        const list = drainingShadesByLantern.get(target.id);
-        if (list) list.push(shade);
-        else drainingShadesByLantern.set(target.id, [shade]);
-      } else {
-        shade.state = 'wander';
-        shade.targetLanternId = null;
-        shade.drainTicks = 0;
-      }
-    }
-  }
-
-  for (const lantern of sortedIds(state.lanterns)) {
-    if (!lantern.lit) continue;
-    const drainers = drainingShadesByLantern.get(lantern.id);
-    const drainAmount = drainers ? drainers.length * DRAIN_PER_TICK : 0;
-    lantern.fuelTicks = Math.max(0, lantern.fuelTicks - (FUEL_DECAY_PER_TICK + drainAmount));
-    const fuelValue = fuelTicksToValue(lantern.fuelTicks);
-
-    if (drainers) {
-      for (const s of drainers) {
-        if (s.drainTicks % DRAIN_LOG_INTERVAL_TICKS === 0) {
-          events.push({
-            type: 'event',
-            tick: state.tick,
-            name: 'fuel_drain',
-            data: { lantern_id: lantern.id, shade_id: s.id, fuel: fuelValue }
-          });
+  if (!state.benchMode) {
+    const drainingShadesByLantern = new Map<string, ShadeState[]>();
+    for (const shade of sortedIds(state.shades)) {
+      if (shade.state === 'drain' && shade.targetLanternId !== null) {
+        const target = state.lanterns.find((l) => l.id === shade.targetLanternId);
+        if (target && target.lit) {
+          shade.drainTicks += 1;
+          const list = drainingShadesByLantern.get(target.id);
+          if (list) list.push(shade);
+          else drainingShadesByLantern.set(target.id, [shade]);
+        } else {
+          shade.state = 'wander';
+          shade.targetLanternId = null;
+          shade.drainTicks = 0;
         }
       }
     }
 
-    if (lantern.fuelTicks <= 0) {
-      lantern.lit = false;
-      lantern.fuelTicks = 0;
-      lantern.deposited = 0;
-      events.push({
-        type: 'event',
-        tick: state.tick,
-        name: 'lantern_out',
-        data: { lantern_id: lantern.id }
-      });
+    for (const lantern of sortedIds(state.lanterns)) {
+      if (!lantern.lit) continue;
+      const drainers = drainingShadesByLantern.get(lantern.id);
+      const drainAmount = drainers ? drainers.length * DRAIN_PER_TICK : 0;
+      lantern.fuelTicks = Math.max(0, lantern.fuelTicks - (FUEL_DECAY_PER_TICK + drainAmount));
+      const fuelValue = fuelTicksToValue(lantern.fuelTicks);
+
       if (drainers) {
         for (const s of drainers) {
-          s.state = 'wander';
-          s.targetLanternId = null;
-          s.drainTicks = 0;
+          if (s.drainTicks % DRAIN_LOG_INTERVAL_TICKS === 0) {
+            events.push({
+              type: 'event',
+              tick: state.tick,
+              name: 'fuel_drain',
+              data: { lantern_id: lantern.id, shade_id: s.id, fuel: fuelValue }
+            });
+          }
+        }
+      }
+
+      if (lantern.fuelTicks <= 0) {
+        lantern.lit = false;
+        lantern.fuelTicks = 0;
+        lantern.deposited = 0;
+        events.push({
+          type: 'event',
+          tick: state.tick,
+          name: 'lantern_out',
+          data: { lantern_id: lantern.id }
+        });
+        if (drainers) {
+          for (const s of drainers) {
+            s.state = 'wander';
+            s.targetLanternId = null;
+            s.drainTicks = 0;
+          }
         }
       }
     }
@@ -480,7 +484,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
   }
 
   // 4. Pickup fireflies & charms
-  if (p.fallWaitTicks === 0 && p.flames > 0) {
+  if (!state.benchMode && p.fallWaitTicks === 0 && p.flames > 0) {
     if (p.carried < p.capacity && state.motes.length > 0) {
       const pickedIds = new Set<string>();
       for (const mote of sortedIds(state.motes)) {
@@ -731,7 +735,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
       }
     }
 
-    if (shade.state === 'wander' && dToPlayer <= SHADE_DETECT_RADIUS) {
+    if (!state.benchMode && shade.state === 'wander' && dToPlayer <= SHADE_DETECT_RADIUS) {
       shade.state = 'chase';
       shade.targetLanternId = null;
       shade.drainTicks = 0;
@@ -883,7 +887,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
   }
 
   // 9. Contacts: Drifters steal FIRST, then Shades deal hit (max 1 flame lost per tick)
-  if (p.fallWaitTicks === 0 && p.flames > 0) {
+  if (!state.benchMode && p.fallWaitTicks === 0 && p.flames > 0) {
     for (const drifter of sortedIds(state.drifters)) {
       if (drifter.createdTick >= state.simTick) continue;
       if (
@@ -1022,37 +1026,39 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
   }
 
   // 11. Win / Loss resolution (no_flames always evaluated first, then dawn survival >= ceil(0.6 * total))
-  if (p.flames <= 0) {
-    state.status = 'lost';
-    events.push({
-      type: 'event',
-      tick: state.tick,
-      name: 'game_over',
-      data: { result: 'lost', reason: 'no_flames' }
-    });
-  } else if (state.timeLeftS <= 0) {
-    const litLanterns = state.lanterns.filter((l) => l.lit);
-    const requiredLit = Math.ceil(TUNING.win_ratio * state.lanterns.length);
-    if (litLanterns.length >= requiredLit) {
-      for (const l of litLanterns) {
-        state.score += TUNING.score.per_lantern_dawn + Math.floor(l.fuelTicks / 60);
-      }
-      state.score += p.flames * TUNING.score.per_flame_left;
-      state.status = 'won';
-      events.push({
-        type: 'event',
-        tick: state.tick,
-        name: 'game_over',
-        data: { result: 'won', reason: 'dawn_survived' }
-      });
-    } else {
+  if (!state.benchMode) {
+    if (p.flames <= 0) {
       state.status = 'lost';
       events.push({
         type: 'event',
         tick: state.tick,
         name: 'game_over',
-        data: { result: 'lost', reason: 'dawn' }
+        data: { result: 'lost', reason: 'no_flames' }
       });
+    } else if (state.timeLeftS <= 0) {
+      const litLanterns = state.lanterns.filter((l) => l.lit);
+      const requiredLit = Math.ceil(TUNING.win_ratio * state.lanterns.length);
+      if (litLanterns.length >= requiredLit) {
+        for (const l of litLanterns) {
+          state.score += TUNING.score.per_lantern_dawn + Math.floor(l.fuelTicks / 60);
+        }
+        state.score += p.flames * TUNING.score.per_flame_left;
+        state.status = 'won';
+        events.push({
+          type: 'event',
+          tick: state.tick,
+          name: 'game_over',
+          data: { result: 'won', reason: 'dawn_survived' }
+        });
+      } else {
+        state.status = 'lost';
+        events.push({
+          type: 'event',
+          tick: state.tick,
+          name: 'game_over',
+          data: { result: 'lost', reason: 'dawn' }
+        });
+      }
     }
   }
 
