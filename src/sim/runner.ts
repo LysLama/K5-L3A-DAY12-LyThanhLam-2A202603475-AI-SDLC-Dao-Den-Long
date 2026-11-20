@@ -1,20 +1,26 @@
-import type { InputFrame, InputState, ScenarioConfig, SimEnd } from './types';
+import type { InputFrame, InputState, NightId, ScenarioConfig, SimEnd } from './types';
 import { stepTick } from './step';
 import { buildSnapshot, createWorld } from './world';
 
 export interface RunSimulationOptions {
   seed: number;
+  night?: NightId;
   ticks: number;
   snapshotEvery: number;
   scenario?: ScenarioConfig;
   frames?: InputFrame[];
+  emitNightStart?: boolean;
 }
 
 export function runSimulation(opts: RunSimulationOptions): string[] {
-  const state = createWorld(opts.seed, opts.scenario);
+  const night: NightId = opts.night ?? 1;
+  const state = createWorld(opts.seed, opts.scenario, night);
   const lines: string[] = [];
 
   lines.push(JSON.stringify(buildSnapshot(state)));
+  if (opts.emitNightStart) {
+    lines.push(JSON.stringify({ type: 'event', tick: 0, name: 'night_start', data: { night } }));
+  }
 
   const frames = opts.frames ?? [];
   let frameIdx = 0;
@@ -25,7 +31,8 @@ export function runSimulation(opts: RunSimulationOptions): string[] {
     jump: false,
     interact: false,
     pulse: false,
-    dash: false
+    dash: false,
+    pause: false
   };
 
   for (let k = 0; k < opts.ticks; k++) {
@@ -40,6 +47,7 @@ export function runSimulation(opts: RunSimulationOptions): string[] {
       if (f.interact !== undefined) input.interact = f.interact;
       if (f.pulse !== undefined) input.pulse = f.pulse;
       if (f.dash !== undefined) input.dash = f.dash;
+      if (f.pause !== undefined) input.pause = f.pause;
       frameIdx += 1;
     }
 
@@ -52,7 +60,7 @@ export function runSimulation(opts: RunSimulationOptions): string[] {
       lines.push(JSON.stringify(buildSnapshot(state)));
     }
 
-    if (state.status !== 'playing') {
+    if (state.status === 'won' || state.status === 'lost') {
       break;
     }
   }

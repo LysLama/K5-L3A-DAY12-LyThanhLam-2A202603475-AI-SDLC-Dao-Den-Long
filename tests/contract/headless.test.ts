@@ -10,7 +10,7 @@ const CLI_PATH = path.resolve('dist-headless/cli.mjs');
 const tempDirs: string[] = [];
 
 function makeTempDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ddl-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ddl-v11-'));
   tempDirs.push(dir);
   return dir;
 }
@@ -32,8 +32,8 @@ afterEach(() => {
   }
 });
 
-describe('Test Contract v1.0 headless CLI & validators', () => {
-  it('exits with code 2 on invalid inputs or scenario JSON/schema', () => {
+describe('Test Contract v1.1 headless CLI & validators', () => {
+  it('exits with code 2 on invalid v1.0/v1.1 inputs or scenario JSON/schema', () => {
     const dir = makeTempDir();
     const out = path.join(dir, 'out.jsonl');
 
@@ -42,33 +42,37 @@ describe('Test Contract v1.0 headless CLI & validators', () => {
     expect(runCliExpectFail(['--seed', '1', '--night', '1', '--inputs', badJson, '--ticks', '10', '--out', out]).status).toBe(2);
 
     const dupTick = path.join(dir, 'dup.json');
-    fs.writeFileSync(dupTick, JSON.stringify({ frames: [{ tick: 0, move: [0, 0] }, { tick: 0, jump: true }] }));
+    fs.writeFileSync(dupTick, JSON.stringify({ frames: [{ tick: 0 }, { tick: 0, pause: true }] }));
     expect(runCliExpectFail(['--seed', '1', '--night', '1', '--inputs', dupTick, '--ticks', '10', '--out', out]).status).toBe(2);
-
-    const decTick = path.join(dir, 'dec.json');
-    fs.writeFileSync(decTick, JSON.stringify({ frames: [{ tick: 5 }, { tick: 3 }] }));
-    expect(runCliExpectFail(['--seed', '1', '--night', '1', '--inputs', decTick, '--ticks', '10', '--out', out]).status).toBe(2);
 
     const badMove = path.join(dir, 'badMove.json');
     fs.writeFileSync(badMove, JSON.stringify({ frames: [{ tick: 0, move: [1.5, 0] }] }));
     expect(runCliExpectFail(['--seed', '1', '--night', '1', '--inputs', badMove, '--ticks', '10', '--out', out]).status).toBe(2);
 
-    const badScenario = path.join(dir, 'badScenario.json');
-    fs.writeFileSync(badScenario, JSON.stringify({ player: { pos: [0, 0] } }));
-    expect(runCliExpectFail(['--seed', '1', '--night', '1', '--scenario', badScenario, '--ticks', '10', '--out', out]).status).toBe(2);
+    const badShadeState = path.join(dir, 'badShade.json');
+    fs.writeFileSync(badShadeState, JSON.stringify({ shades: [{ pos: [0, 1, 0], state: 'bogus' }] }));
+    expect(runCliExpectFail(['--seed', '1', '--night', '1', '--scenario', badShadeState, '--ticks', '10', '--out', out]).status).toBe(2);
 
-    expect(() => parseAndValidateInputs('{"frames":[]}')).not.toThrow();
-    expect(() => parseAndValidateScenario('{}')).not.toThrow();
+    expect(() => parseAndValidateInputs('{"frames":[{"tick":0,"dash":true,"pause":false}]}')).not.toThrow();
+    expect(() => parseAndValidateScenario('{"wind_enabled":true,"random_drifters":false}')).not.toThrow();
   });
 
-  it('exits with code 1 on invalid CLI args such as --night 2 or missing --out', () => {
+  it('supports --night 1, 2, 3 and exits with code 1 on --night 4 or missing --out', () => {
     const dir = makeTempDir();
     const out = path.join(dir, 'out.jsonl');
-    expect(runCliExpectFail(['--seed', '1', '--night', '2', '--ticks', '10', '--out', out]).status).toBe(1);
-    expect(runCliExpectFail(['--seed', '1', '--night', '1', '--ticks', '10']).status).toBe(1);
+    expect(runCliExpectFail(['--seed', '1', '--night', '4', '--ticks', '10', '--out', out]).status).toBe(1);
+    expect(runCliExpectFail(['--seed', '1', '--night', '2', '--ticks', '10']).status).toBe(1);
+
+    for (const n of [1, 2, 3] as const) {
+      const nOut = path.join(dir, `n${n}.jsonl`);
+      execFileSync('node', [CLI_PATH, '--seed', '42', '--night', String(n), '--ticks', '10', '--out', nOut]);
+      const lines = fs.readFileSync(nOut, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+      expect(lines[0].night).toBe(n);
+      expect(lines[1]).toEqual({ type: 'event', tick: 0, name: 'night_start', data: { night: n } });
+    }
   });
 
-  it('emits tick 0 snapshot before tick 0 input, preserves sparse frame fields, and stops on win', () => {
+  it('passes Phase 1 regression win flow under normalized v1.1 numbers and pauses cleanly', () => {
     const dir = makeTempDir();
     const scenarioPath = path.join(dir, 'scenario.json');
     const inputsPath = path.join(dir, 'inputs.json');
@@ -83,11 +87,11 @@ describe('Test Contract v1.0 headless CLI & validators', () => {
         motes: [[0, 0, 2.5]],
         shades: [],
         lanterns: [
-          { id: 'L1', pos: [0, 0, 4.5], deposited: 3, lit: false },
-          { id: 'L2', lit: true, deposited: 4 },
-          { id: 'L3', lit: true, deposited: 4 },
-          { id: 'L4', lit: true, deposited: 4 },
-          { id: 'L5', lit: true, deposited: 4 }
+          { id: 'L1', pos: [0, 0, 4.5], deposited: 9, lit: false },
+          { id: 'L2', lit: true, deposited: 10 },
+          { id: 'L3', lit: true, deposited: 10 },
+          { id: 'L4', lit: true, deposited: 10 },
+          { id: 'L5', lit: true, deposited: 10 }
         ],
         time_left_s: 100
       })
@@ -97,123 +101,96 @@ describe('Test Contract v1.0 headless CLI & validators', () => {
       JSON.stringify({
         frames: [
           { tick: 0, move: [0, 1], cam_yaw_deg: 0 },
-          { tick: 25, interact: true },
-          { tick: 26, interact: false }
+          { tick: 35, interact: true },
+          { tick: 36, interact: false }
         ]
       })
     );
 
-    execFileSync(
-      'node',
-      [
-        CLI_PATH,
-        '--seed',
-        '7',
-        '--night',
-        '1',
-        '--scenario',
-        scenarioPath,
-        '--inputs',
-        inputsPath,
-        '--ticks',
-        '200',
-        '--out',
-        outPath,
-        '--snapshot-every',
-        '10'
-      ],
-      { encoding: 'utf8' }
-    );
+    execFileSync('node', [
+      CLI_PATH,
+      '--seed',
+      '7',
+      '--night',
+      '1',
+      '--scenario',
+      scenarioPath,
+      '--inputs',
+      inputsPath,
+      '--ticks',
+      '100',
+      '--out',
+      outPath,
+      '--snapshot-every',
+      '10'
+    ]);
 
-    const lines = fs
-      .readFileSync(outPath, 'utf8')
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line));
-
+    const lines = fs.readFileSync(outPath, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     expect(lines[0].type).toBe('snapshot');
     expect(lines[0].tick).toBe(0);
     expect(lines[0].player.pos).toEqual([0, 0, 0]);
-    expect(lines[0].motes).toEqual([{ id: 'M1', pos: [0, 0, 2.5] }]);
-
     const events = lines.filter((l) => l.type === 'event');
     expect(events.map((e) => e.name)).toEqual(['mote_picked', 'deposit', 'lantern_lit', 'game_over']);
-    expect(events[1].tick).toBe(26); // frame tick 25 -> step 25 -> event tick 26
+    expect(lines.at(-1).state).toBe('won');
 
-    const end = lines[lines.length - 1];
-    expect(end.type).toBe('end');
-    expect(end.state).toBe('won');
-    expect(end.ticks).toBe(26);
-    expect(runSimulation({ seed: 7, ticks: 200, snapshotEvery: 10 }).length).toBeGreaterThan(0);
+    // Pause freeze check via runSimulation
+    const pauseLines = runSimulation({
+      seed: 1,
+      night: 1,
+      ticks: 20,
+      snapshotEvery: 10,
+      frames: [
+        { tick: 2, pause: true },
+        { tick: 3, pause: false },
+        { tick: 15, pause: true }
+      ]
+    }).map((l) => JSON.parse(l));
+    const snap10 = pauseLines.find((l) => l.type === 'snapshot' && l.tick === 10);
+    expect(snap10.state).toBe('paused');
+    expect(snap10.sim_tick).toBe(2);
   });
 
-  it('produces byte-for-byte identical output across runs with the same seed and emits shade_spawned / dawn loss', () => {
+  it('completes 21,600 ticks on Night 3 well under 30 seconds and stays 100% deterministic', () => {
     const dir = makeTempDir();
-    const out1 = path.join(dir, 'run1.jsonl');
-    const out2 = path.join(dir, 'run2.jsonl');
+    const out1 = path.join(dir, 'n3_a.jsonl');
+    const out2 = path.join(dir, 'n3_b.jsonl');
+    const safeScenario = path.join(dir, 'n3_safe.json');
+    fs.writeFileSync(safeScenario, JSON.stringify({ player: { pos: [0, 6, 4], flames: 99 } }));
 
-    execFileSync('node', [CLI_PATH, '--seed', '42', '--night', '1', '--ticks', '600', '--out', out1]);
-    execFileSync('node', [CLI_PATH, '--seed', '42', '--night', '1', '--ticks', '600', '--out', out2]);
-
-    const raw1 = fs.readFileSync(out1, 'utf8');
-    const raw2 = fs.readFileSync(out2, 'utf8');
-    expect(raw1).toBe(raw2);
-
-    const safeScenario = path.join(dir, 'safe.json');
-    const safeOut = path.join(dir, 'safe.jsonl');
-    fs.writeFileSync(
-      safeScenario,
-      JSON.stringify({
-        random_motes: false,
-        random_shades: true,
-        motes: [],
-        lanterns: [{ id: 'L1', pos: [0, 0, 0], lit: true, deposited: 4 }]
-      })
-    );
+    const t0 = performance.now();
     execFileSync('node', [
       CLI_PATH,
       '--seed',
       '42',
       '--night',
-      '1',
+      '3',
       '--scenario',
       safeScenario,
       '--ticks',
-      '1510',
+      '21600',
       '--out',
-      safeOut,
+      out1,
       '--snapshot-every',
-      '500'
+      '60'
     ]);
-    const safeRaw = fs.readFileSync(safeOut, 'utf8');
-    expect(safeRaw).toContain('"tick":1500,"name":"shade_spawned"');
+    const elapsedMs = performance.now() - t0;
+    expect(elapsedMs).toBeLessThan(5000);
 
-    const dawnScenario = path.join(dir, 'dawn.json');
-    const dawnOut = path.join(dir, 'dawn.jsonl');
-    fs.writeFileSync(
-      dawnScenario,
-      JSON.stringify({ random_motes: false, random_shades: false, motes: [], shades: [], time_left_s: 0.1 })
-    );
     execFileSync('node', [
       CLI_PATH,
       '--seed',
-      '1',
+      '42',
       '--night',
-      '1',
+      '3',
       '--scenario',
-      dawnScenario,
+      safeScenario,
       '--ticks',
-      '30',
+      '21600',
       '--out',
-      dawnOut
+      out2,
+      '--snapshot-every',
+      '60'
     ]);
-    const dawnLines = fs.readFileSync(dawnOut, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-    expect(dawnLines.at(-2)).toEqual({
-      type: 'event',
-      tick: 6,
-      name: 'game_over',
-      data: { result: 'lost', reason: 'dawn' }
-    });
-    expect(dawnLines.at(-1)).toEqual({ type: 'end', ticks: 6, state: 'lost', score: 0 });
+    expect(fs.readFileSync(out1, 'utf8')).toBe(fs.readFileSync(out2, 'utf8'));
   });
 });

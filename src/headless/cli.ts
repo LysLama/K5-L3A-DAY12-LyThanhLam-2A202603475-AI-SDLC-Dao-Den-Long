@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { runSimulation } from '../sim/runner';
-import type { InputFrame, ScenarioConfig } from '../sim/types';
+import type { InputFrame, NightId, ScenarioConfig } from '../sim/types';
 import {
   ContractValidationError,
   parseAndValidateInputs,
@@ -10,7 +10,7 @@ import {
 
 interface CliArgs {
   seed: number;
-  night: number;
+  night: NightId;
   ticks: number;
   out: string;
   snapshotEvery: number;
@@ -56,9 +56,9 @@ function parseArgs(argv: string[]): CliArgs {
   }
 
   const seed = parseIntFlag(map.get('--seed'), '--seed');
-  const night = parseIntFlag(map.get('--night'), '--night');
-  if (night !== 1) {
-    throw new Error(`Unsupported night ${night}; Phase 1 supports --night 1 only`);
+  const nightRaw = parseIntFlag(map.get('--night'), '--night');
+  if (nightRaw !== 1 && nightRaw !== 2 && nightRaw !== 3) {
+    throw new Error(`Unsupported night ${nightRaw}; expected 1, 2, or 3`);
   }
 
   const ticks = parseIntFlag(map.get('--ticks'), '--ticks');
@@ -80,7 +80,7 @@ function parseArgs(argv: string[]): CliArgs {
 
   return {
     seed,
-    night,
+    night: nightRaw,
     ticks,
     out,
     snapshotEvery,
@@ -94,23 +94,25 @@ function main(): void {
     const args = parseArgs(process.argv.slice(2));
 
     let scenario: ScenarioConfig | undefined;
-    if (args.scenario) {
+    if (args.scenario !== undefined) {
       const rawScenario = fs.readFileSync(args.scenario, 'utf8');
       scenario = parseAndValidateScenario(rawScenario);
     }
 
     let frames: InputFrame[] | undefined;
-    if (args.inputs) {
+    if (args.inputs !== undefined) {
       const rawInputs = fs.readFileSync(args.inputs, 'utf8');
       frames = parseAndValidateInputs(rawInputs);
     }
 
     const lines = runSimulation({
       seed: args.seed,
+      night: args.night,
       ticks: args.ticks,
       snapshotEvery: args.snapshotEvery,
       scenario,
-      frames
+      frames,
+      emitNightStart: args.scenario === undefined
     });
 
     const outDir = path.dirname(path.resolve(args.out));

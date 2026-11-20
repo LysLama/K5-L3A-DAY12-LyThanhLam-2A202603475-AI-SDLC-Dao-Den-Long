@@ -1,14 +1,19 @@
 import {
-  DEFAULT_LANTERN_POSITIONS,
+  DRIFTER_FLEE_STEAL_TICKS,
   INITIAL_MOTE_COUNT,
-  INITIAL_SHADE_COUNT,
-  SHADE_DEFAULT_Y,
+  PULSE_STUN_TICKS,
+  RECOIL_TICKS,
+  SHADE_SPAWNING_TICKS,
   TUNING
 } from './constants';
+import { getHighestGroundAt, getMapConfig } from './maps';
 import { createRng } from './rng';
 import type {
+  CharmState,
+  DrifterState,
   LanternState,
   MoteState,
+  NightId,
   ScenarioConfig,
   ShadeState,
   SimSnapshot,
@@ -29,7 +34,11 @@ export function distXZ(a: Vec3, b: Vec3): number {
   return Math.hypot(a[0] - b[0], a[2] - b[2]);
 }
 
-function maxNumericSuffix(ids: string[], prefix: 'M' | 'S'): number {
+export function dist3D(a: Vec3, b: Vec3): number {
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+}
+
+function maxNumericSuffix(ids: string[], prefix: 'M' | 'S' | 'D'): number {
   const re = new RegExp(`^${prefix}(\\d+)$`);
   let max = 0;
   for (const id of ids) {
@@ -42,70 +51,53 @@ function maxNumericSuffix(ids: string[], prefix: 'M' | 'S'): number {
   return max;
 }
 
-export function allocateNextId(state: SimState, prefix: 'M' | 'S'): string {
-  const existing = new Set(
-    prefix === 'M' ? state.motes.map((m) => m.id) : state.shades.map((s) => s.id)
-  );
-  let seq = prefix === 'M' ? state.nextMoteSeq : state.nextShadeSeq;
+export function allocateNextId(state: SimState, prefix: 'M' | 'S' | 'D'): string {
+  const list =
+    prefix === 'M' ? state.motes : prefix === 'S' ? state.shades : state.drifters;
+  const existing = new Set(list.map((item) => item.id));
+  let seq =
+    prefix === 'M'
+      ? state.nextMoteSeq
+      : prefix === 'S'
+        ? state.nextShadeSeq
+        : state.nextDrifterSeq;
   while (existing.has(`${prefix}${seq}`)) {
     seq += 1;
   }
-  if (prefix === 'M') {
-    state.nextMoteSeq = seq + 1;
-  } else {
-    state.nextShadeSeq = seq + 1;
-  }
+  if (prefix === 'M') state.nextMoteSeq = seq + 1;
+  else if (prefix === 'S') state.nextShadeSeq = seq + 1;
+  else state.nextDrifterSeq = seq + 1;
   return `${prefix}${seq}`;
 }
 
-export function sampleMotePosition(
-  rng: () => number,
-  existingMotes: ReadonlyArray<{ pos: Vec3 }>,
-  playerPos: Vec3
-): Vec3 {
-  let fallback: Vec3 = [8, 0, 8];
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const r = 6 + Math.sqrt(rng()) * 24; // [6, 30]
-    const angle = rng() * Math.PI * 2;
-    const candidate: Vec3 = [round3(r * Math.cos(angle)), 0, round3(r * Math.sin(angle))];
-    if (attempt === 0) fallback = candidate;
-    if (distXZ(candidate, playerPos) <= TUNING.pickup_radius + 0.5) continue;
-    const tooClose = existingMotes.some((m) => distXZ(candidate, m.pos) < 2.5);
-    if (!tooClose) return candidate;
+function resolveUniqueIds<T extends { id?: string }>(
+  items: ReadonlyArray<T>,
+  prefix: 'M' | 'S' | 'D'
+): string[] {
+  const used = new Set<string>();
+  for (const item of items) {
+    if (item.id !== undefined) used.add(item.id);
   }
-  return fallback;
+  let seq = 1;
+  return items.map((item) => {
+    if (item.id !== undefined) return item.id;
+    while (used.has(`${prefix}${seq}`)) seq += 1;
+    const id = `${prefix}${seq++}`;
+    used.add(id);
+    return id;
+  });
 }
 
-export function sampleShadePosition(
-  rng: () => number,
-  lanterns: ReadonlyArray<LanternState>,
-  playerPos: Vec3,
-  minDistFromPlayer: number
-): Vec3 {
-  let fallback: Vec3 = [0, SHADE_DEFAULT_Y, 29];
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const r = 26 + rng() * 6; // [26, 32]
-    const angle = rng() * Math.PI * 2;
-    const candidate: Vec3 = [
-      round3(r * Math.cos(angle)),
-      SHADE_DEFAULT_Y,
-      round3(r * Math.sin(angle))
-    ];
-    if (attempt === 0) fallback = candidate;
-    if (distXZ(candidate, playerPos) < minDistFromPlayer) continue;
-    const insideSafe = lanterns.some(
-      (l) => l.lit && distXZ(candidate, l.pos) < TUNING.safe_radius
-    );
-    if (!insideSafe) return candidate;
-  }
-  return fallback;
-}
-
-export function createWorld(seed: number, scenario?: ScenarioConfig): SimState {
+export function createWorld(
+  seed: number,
+  scenario?: ScenarioConfig,
+  night: NightId = 1
+): SimState {
   const rng = createRng(seed);
-  const initialTimeLeftS = scenario?.time_left_s ?? TUNING.night1_duration_s;
+  const map = getMapConfig(night);
+  const initialTimeLeftS = scenario?.time_left_s ?? map.durationS;
 
-  const lanterns: LanternState[] = DEFAULT_LANTERN_POSITIONS.map((l) => ({
+  const lanterns: LanternState[] = map.lanterns.map((l) => ({
     id: l.id,
     pos: [l.pos[0], l.pos[1], l.pos[2]],
     lit: false,
@@ -116,12 +108,8 @@ export function createWorld(seed: number, scenario?: ScenarioConfig): SimState {
     for (const override of scenario.lanterns) {
       const target = lanterns.find((l) => l.id === override.id);
       if (!target) continue;
-      if (override.pos) {
-        target.pos = [override.pos[0], override.pos[1], override.pos[2]];
-      }
-      if (override.deposited !== undefined) {
-        target.deposited = override.deposited;
-      }
+      if (override.pos) target.pos = [override.pos[0], override.pos[1], override.pos[2]];
+      if (override.deposited !== undefined) target.deposited = override.deposited;
       if (override.lit !== undefined) {
         target.lit = override.lit;
         if (override.lit && override.deposited === undefined) {
@@ -133,78 +121,136 @@ export function createWorld(seed: number, scenario?: ScenarioConfig): SimState {
 
   const playerPos: Vec3 = scenario?.player?.pos
     ? [scenario.player.pos[0], scenario.player.pos[1], scenario.player.pos[2]]
-    : [0, 0, 0];
+    : [map.spawnPos[0], map.spawnPos[1], map.spawnPos[2]];
+
+  const floorAtSpawn = getHighestGroundAt(night, playerPos[0], playerPos[2], playerPos[1]);
+  const grounded = floorAtSpawn !== null && Math.abs(playerPos[1] - floorAtSpawn) <= 0.1;
 
   const randomMotes = scenario?.random_motes ?? true;
   const randomShades = scenario?.random_shades ?? true;
+  const randomDrifters = scenario?.random_drifters ?? map.driftersEnabled;
 
   const motes: MoteState[] = [];
   if (scenario?.motes !== undefined) {
-    const usedMoteIds = new Set<string>();
-    for (const entry of scenario.motes) {
-      if (!Array.isArray(entry) && entry.id !== undefined) {
-        usedMoteIds.add(entry.id);
-      }
-    }
-    let seq = 1;
-    for (const entry of scenario.motes) {
-      if (Array.isArray(entry) || entry.id === undefined) {
-        while (usedMoteIds.has(`M${seq}`)) seq += 1;
-        const id = `M${seq++}`;
-        usedMoteIds.add(id);
-        const pos = Array.isArray(entry) ? entry : entry.pos;
-        motes.push({ id, pos: [pos[0], pos[1], pos[2]] });
-      } else {
-        motes.push({ id: entry.id, pos: [entry.pos[0], entry.pos[1], entry.pos[2]] });
-      }
-    }
+    const normalized = scenario.motes.map((entry) =>
+      Array.isArray(entry)
+        ? { pos: entry, kind: 'random' as const }
+        : {
+            id: entry.id,
+            pos: entry.pos,
+            kind: entry.kind ?? ('random' as const),
+            ttl_s: entry.ttl_s
+          }
+    );
+    const ids = resolveUniqueIds(normalized, 'M');
+    normalized.forEach((item, idx) => {
+      const ttlTicks =
+        item.kind === 'dropped'
+          ? Math.max(1, Math.round((item.ttl_s ?? 8) * 60))
+          : null;
+      motes.push({
+        id: ids[idx],
+        pos: [item.pos[0], item.pos[1], item.pos[2]],
+        kind: item.kind,
+        ttlTicks,
+        createdTick: 0
+      });
+    });
   } else if (randomMotes) {
-    for (let i = 1; i <= INITIAL_MOTE_COUNT; i++) {
-      const pos = sampleMotePosition(rng, motes, playerPos);
-      motes.push({ id: `M${i}`, pos });
+    const pool = [...map.moteSpawnPoints];
+    const count = Math.min(INITIAL_MOTE_COUNT, pool.length);
+    for (let i = 0; i < count; i++) {
+      const j = i + Math.floor(rng() * (pool.length - i));
+      const tmp = pool[i];
+      pool[i] = pool[j];
+      pool[j] = tmp;
+      const pt = pool[i];
+      motes.push({
+        id: `M${i + 1}`,
+        pos: [pt[0], pt[1], pt[2]],
+        kind: 'random',
+        ttlTicks: null,
+        createdTick: 0
+      });
     }
   }
 
   const shades: ShadeState[] = [];
   if (scenario?.shades !== undefined) {
-    const usedShadeIds = new Set<string>();
-    for (const entry of scenario.shades) {
-      if (entry.id !== undefined) {
-        usedShadeIds.add(entry.id);
-      }
-    }
-    let seq = 1;
-    for (const entry of scenario.shades) {
-      let id: string;
-      if (entry.id === undefined) {
-        while (usedShadeIds.has(`S${seq}`)) seq += 1;
-        id = `S${seq++}`;
-        usedShadeIds.add(id);
-      } else {
-        id = entry.id;
-      }
-      const state = entry.state ?? 'chase';
+    const ids = resolveUniqueIds(scenario.shades, 'S');
+    scenario.shades.forEach((entry, idx) => {
+      const st = entry.state ?? 'chase';
+      const defaultTicks =
+        st === 'stunned'
+          ? PULSE_STUN_TICKS
+          : st === 'spawning'
+            ? SHADE_SPAWNING_TICKS
+            : st === 'recoil'
+              ? RECOIL_TICKS
+              : 0;
       shades.push({
-        id,
+        id: ids[idx],
         pos: [entry.pos[0], entry.pos[1], entry.pos[2]],
-        state,
-        stunRemaining: state === 'stunned' ? TUNING.pulse_stun_s : 0
+        state: st,
+        stateTicksLeft: entry.state_ticks_left ?? defaultTicks,
+        pushTicksLeft: 0,
+        pushDir: [1, 0],
+        recoilDir: [1, 0],
+        safePushTicksLeft: 0,
+        wanderDir: [1, 0],
+        wanderTimerTicks: 0,
+        createdTick: 0
       });
-    }
-  } else if (randomShades) {
-    for (let i = 1; i <= INITIAL_SHADE_COUNT; i++) {
-      const pos = sampleShadePosition(rng, lanterns, playerPos, 18);
-      shades.push({
-        id: `S${i}`,
+    });
+  }
+
+  const drifters: DrifterState[] = [];
+  if (scenario?.drifters !== undefined) {
+    const ids = resolveUniqueIds(scenario.drifters, 'D');
+    scenario.drifters.forEach((entry, idx) => {
+      const st = entry.state ?? 'idle';
+      const stolen = entry.stolen ?? 0;
+      drifters.push({
+        id: ids[idx],
+        pos: [entry.pos[0], entry.pos[1], entry.pos[2]],
+        state: st,
+        stolen,
+        hasStolen: st === 'flee' && stolen > 0,
+        stateTicksLeft: st === 'flee' ? DRIFTER_FLEE_STEAL_TICKS : 0,
+        wanderAngle: idx * 1.7,
+        createdTick: 0
+      });
+    });
+  }
+
+  let charms: CharmState[];
+  if (scenario?.charms !== undefined) {
+    charms = scenario.charms.map((c) => {
+      const def = map.charms.find((d) => d.id === c.id);
+      const pos: Vec3 = c.pos
+        ? [c.pos[0], c.pos[1], c.pos[2]]
+        : def
+          ? [def.pos[0], def.pos[1], def.pos[2]]
+          : [0, 0, 0];
+      return {
+        id: c.id,
         pos,
-        state: 'chase',
-        stunRemaining: 0
-      });
-    }
+        available: c.available ?? true,
+        respawnTicks: Math.max(0, Math.round((c.respawn_s ?? 0) * 60))
+      };
+    });
+  } else {
+    charms = map.charms.map((c) => ({
+      id: c.id,
+      pos: [c.pos[0], c.pos[1], c.pos[2]],
+      available: true,
+      respawnTicks: 0
+    }));
   }
 
   return {
     seed,
+    night,
     rng,
     tick: 0,
     simTick: 0,
@@ -214,27 +260,48 @@ export function createWorld(seed: number, scenario?: ScenarioConfig): SimState {
     score: 0,
     randomMotes,
     randomShades,
-    moteSpawnTimerTicks: 0,
-    shadeSpawnTimerTicks: 0,
+    randomDrifters,
+    initialShadeSpawned: false,
+    nextShadeSpawnTick: 300,
     nextMoteSeq: maxNumericSuffix(motes.map((m) => m.id), 'M') + 1,
     nextShadeSeq: maxNumericSuffix(shades.map((s) => s.id), 'S') + 1,
+    nextDrifterSeq: maxNumericSuffix(drifters.map((d) => d.id), 'D') + 1,
+    playerSpawnPos: [map.spawnPos[0], map.spawnPos[1], map.spawnPos[2]],
+    playerSpawnFacing: [map.spawnFacing[0], map.spawnFacing[1]],
     player: {
       pos: playerPos,
-      vy: 0,
-      facing: [0, 1],
+      vel: [0, 0, 0],
+      grounded,
+      launched: false,
+      facing: [map.spawnFacing[0], map.spawnFacing[1]],
       flames: scenario?.player?.flames ?? TUNING.flames,
       carried: scenario?.player?.carried ?? 0,
-      invulnRemaining: 0,
-      pulseCooldownRemaining: 0
+      invulnTicks: scenario?.player?.invuln_ticks ?? 0,
+      dashTicksLeft: 0,
+      dashDir: [map.spawnFacing[0], map.spawnFacing[1]],
+      dashCdTicks: scenario?.player?.dash_cd_ticks ?? 0,
+      pulseCdTicks: scenario?.player?.pulse_cd_ticks ?? 0,
+      charmTicks: scenario?.player?.charm_ticks ?? 0,
+      fallWaitTicks: 0
     },
     lanterns,
     motes,
     shades,
+    drifters,
+    charms,
+    wind: {
+      enabled: scenario?.wind_enabled ?? map.windEnabled,
+      active: false,
+      warning: false,
+      dirDeg: 0,
+      cycleTick: 0
+    },
     prevButtons: {
       jump: false,
       interact: false,
       pulse: false,
-      dash: false
+      dash: false,
+      pause: false
     }
   };
 }
@@ -244,13 +311,24 @@ export function buildSnapshot(state: SimState): SimSnapshot {
     type: 'snapshot',
     tick: state.tick,
     sim_tick: state.simTick,
+    night: state.night,
     state: state.status,
     time_left_s: round3(state.timeLeftS),
     score: state.score,
+    wind: {
+      active: state.wind.active,
+      dir_deg: round3(state.wind.dirDeg)
+    },
     player: {
       pos: roundPos(state.player.pos),
+      vel: roundPos(state.player.vel),
+      grounded: state.player.grounded,
       flames: state.player.flames,
-      carried: state.player.carried
+      carried: state.player.carried,
+      invuln: state.player.invulnTicks > 0,
+      dash_cd_s: round3(state.player.dashCdTicks / 60),
+      pulse_cd_s: round3(state.player.pulseCdTicks / 60),
+      charm_s: round3(state.player.charmTicks / 60)
     },
     lanterns: state.lanterns.map((l) => ({
       id: l.id,
@@ -265,8 +343,21 @@ export function buildSnapshot(state: SimState): SimSnapshot {
     })),
     motes: state.motes.map((m) => ({
       id: m.id,
-      pos: roundPos(m.pos)
+      pos: roundPos(m.pos),
+      kind: m.kind,
+      ttl_s: m.ttlTicks === null ? null : round3(m.ttlTicks / 60)
     })),
-    motes_active: state.motes.length
+    motes_active: state.motes.length,
+    drifters: state.drifters.map((d) => ({
+      id: d.id,
+      pos: roundPos(d.pos),
+      state: d.state,
+      stolen: d.stolen
+    })),
+    charms: state.charms.map((c) => ({
+      id: c.id,
+      available: c.available,
+      respawn_s: round3(c.respawnTicks / 60)
+    }))
   };
 }
