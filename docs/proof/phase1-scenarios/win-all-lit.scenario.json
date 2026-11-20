@@ -3,22 +3,23 @@
   "random_motes": false,
   "random_shades": false,
   "motes": [
-    [0, 0, 3],
-    [0, 0, 5],
-    [0, 0, 7],
-    [0, 0, 9],
+    [0, 0, 2],
+    [0, 0, 4],
+    [0, 0, 6],
+    [0, 0, 8],
+    [0, 0, 10],
     [0, 0, 15],
-    [0, 0, 17]
+    [0, 0, 16.5]
   ],
   "shades": [
-    { "id": "S1", "pos": [0, 1, 16] }
+    { "id": "S1", "pos": [0, 0, 13.0] }
   ],
   "lanterns": [
-    { "id": "L1", "pos": [0, 0, 12], "deposited": 2, "lit": false },
-    { "id": "L2", "pos": [0, 0, 22], "deposited": 2, "lit": false },
-    { "id": "L3", "lit": true, "deposited": 4 },
-    { "id": "L4", "lit": true, "deposited": 4 },
-    { "id": "L5", "lit": true, "deposited": 4 }
+    { "id": "L1", "pos": [0, 0, 12], "deposited": 8, "lit": false },
+    { "id": "L2", "pos": [0, 0, 18.2], "deposited": 8, "lit": false },
+    { "id": "L3", "lit": true, "deposited": 10 },
+    { "id": "L4", "lit": true, "deposited": 10 },
+    { "id": "L5", "lit": true, "deposited": 10 }
   ],
   "time_left_s": 240
 }

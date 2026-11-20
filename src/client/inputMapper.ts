@@ -3,7 +3,8 @@ import type { InputState } from '../sim/types';
 export function mapKeysToInput(
   pressedKeys: ReadonlySet<string>,
   camYawDeg: number,
-  rightMousePulse = false
+  rightMousePulse = false,
+  pauseTrigger = false
 ): InputState {
   let mx = 0;
   let mz = 0;
@@ -19,11 +20,8 @@ export function mapKeysToInput(
     cam_yaw_deg: camYawDeg,
     jump: pressedKeys.has('Space'),
     interact: pressedKeys.has('KeyE') || pressedKeys.has('KeyF'),
-    pulse:
-      rightMousePulse ||
-      pressedKeys.has('ShiftLeft') ||
-      pressedKeys.has('ShiftRight') ||
-      pressedKeys.has('KeyR'),
-    dash: false
+    pulse: rightMousePulse || pressedKeys.has('KeyQ') || pressedKeys.has('KeyR'),
+    dash: pressedKeys.has('ShiftLeft') || pressedKeys.has('ShiftRight'),
+    pause: pauseTrigger || pressedKeys.has('KeyP') || pressedKeys.has('Escape')
   };
 }

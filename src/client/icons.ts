@@ -36,6 +36,18 @@ export function svgPulse(): string {
   </svg>`;
 }
 
+export function svgDash(): string {
+  return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M3 8h10a3 3 0 1 0-3-3M3 13h14a3 3 0 1 1-3 3M3 18h7"/>
+  </svg>`;
+}
+
+export function svgWind(): string {
+  return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2M9.6 4.6A2 2 0 1 1 11 8H2M12.6 19.4A2 2 0 1 0 14 16H2"/>
+  </svg>`;
+}
+
 export function svgSound(muted: boolean): string {
   return muted
     ? `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -63,5 +75,11 @@ export function svgHelp(): string {
   return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <circle cx="12" cy="12" r="9"/>
     <path d="M9.5 9.5a2.5 2.5 0 0 1 4.9.7c0 1.6-2.4 2.1-2.4 3.6M12 17.2h.01"/>
+  </svg>`;
+}
+
+export function svgDirectionArrow(): string {
+  return `<svg class="ico ico-dir" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M12 3l7 15-7-3.5L5 18l7-15Z"/>
   </svg>`;
 }
