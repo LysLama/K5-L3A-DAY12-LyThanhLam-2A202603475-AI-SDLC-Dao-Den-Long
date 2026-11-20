@@ -8,6 +8,7 @@ export interface SoakOptions {
   nights: number;
   getRssMb: () => number;
   nowMs?: () => number;
+  onCleanup?: () => void;
 }
 
 export interface SoakOutput {
@@ -55,6 +56,7 @@ export function runSoak(options: SoakOptions): SoakOutput {
     try {
       state = createWorld(nightSeed, undefined, night);
       if (i === 0) {
+        options.onCleanup?.();
         memStartMb = Math.round(options.getRssMb());
       }
 
@@ -86,9 +88,11 @@ export function runSoak(options: SoakOptions): SoakOutput {
       results.push('lost');
     } finally {
       state = null;
+      options.onCleanup?.();
     }
   }
 
+  options.onCleanup?.();
   const memEndMb = Math.round(options.getRssMb());
   const tEnd = options.nowMs ? options.nowMs() : 0;
   const durationS = Math.max(0, round1((tEnd - tStart) / 1000));

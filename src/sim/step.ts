@@ -72,8 +72,15 @@ import type {
 } from './types';
 import { allocateNextId, computeCapacity, dist3D, distXZ, fuelTicksToValue, round3 } from './world';
 
-function sortedIds<T extends { id: string }>(items: ReadonlyArray<T>): T[] {
-  return [...items].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+function sortedIds<T extends { id: string }>(items: ReadonlyArray<T>): ReadonlyArray<T> {
+  const len = items.length;
+  if (len <= 1) return items;
+  for (let i = 1; i < len; i++) {
+    if (items[i - 1].id > items[i].id) {
+      return [...items].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    }
+  }
+  return items;
 }
 
 function resolveMoveVector(move: Vec2, camYawDeg: number): Vec2 {
@@ -309,12 +316,13 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
 
   // Step 2b: Subtract natural fuel decay + drain; extinguish fuel <= 0 -> lantern_out
   if (!state.benchMode) {
-    const drainingShadesByLantern = new Map<string, ShadeState[]>();
+    let drainingShadesByLantern: Map<string, ShadeState[]> | null = null;
     for (const shade of sortedIds(state.shades)) {
       if (shade.state === 'drain' && shade.targetLanternId !== null) {
         const target = state.lanterns.find((l) => l.id === shade.targetLanternId);
         if (target && target.lit) {
           shade.drainTicks += 1;
+          if (!drainingShadesByLantern) drainingShadesByLantern = new Map<string, ShadeState[]>();
           const list = drainingShadesByLantern.get(target.id);
           if (list) list.push(shade);
           else drainingShadesByLantern.set(target.id, [shade]);
@@ -328,7 +336,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
 
     for (const lantern of sortedIds(state.lanterns)) {
       if (!lantern.lit) continue;
-      const drainers = drainingShadesByLantern.get(lantern.id);
+      const drainers = drainingShadesByLantern?.get(lantern.id);
       const drainAmount = drainers ? drainers.length * DRAIN_PER_TICK : 0;
       lantern.fuelTicks = Math.max(0, lantern.fuelTicks - (FUEL_DECAY_PER_TICK + drainAmount));
       const fuelValue = fuelTicksToValue(lantern.fuelTicks);
@@ -486,7 +494,7 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
   // 4. Pickup fireflies & charms
   if (!state.benchMode && p.fallWaitTicks === 0 && p.flames > 0) {
     if (p.carried < p.capacity && state.motes.length > 0) {
-      const pickedIds = new Set<string>();
+      let pickedIds: Set<string> | null = null;
       for (const mote of sortedIds(state.motes)) {
         if (p.carried >= p.capacity) break;
         if (mote.createdTick >= state.simTick) continue;
@@ -494,12 +502,13 @@ export function stepTick(state: SimState, input: InputState): SimEvent[] {
           distXZ(p.pos, mote.pos) <= TUNING.pickup_radius &&
           Math.abs(p.pos[1] - mote.pos[1]) <= PICKUP_MAX_DY
         ) {
+          if (!pickedIds) pickedIds = new Set<string>();
           pickedIds.add(mote.id);
           p.carried += 1;
           events.push({ type: 'event', tick: state.tick, name: 'mote_picked', data: { carried: p.carried } });
         }
       }
-      if (pickedIds.size > 0) {
+      if (pickedIds) {
         state.motes = state.motes.filter((m) => !pickedIds.has(m.id));
       }
     }
