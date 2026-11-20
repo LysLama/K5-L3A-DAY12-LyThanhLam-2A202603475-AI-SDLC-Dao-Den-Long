@@ -6,7 +6,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { DT } from '../sim/constants';
 import { stepTick } from '../sim/step';
-import type { SimEvent, SimState } from '../sim/types';
+import type { SimEvent, SimState, Vec3 } from '../sim/types';
 import { createWorld } from '../sim/world';
 import { Soundscape } from './audio';
 import { ThirdPersonCamera } from './camera';
@@ -27,6 +27,8 @@ class GameApp {
   private composer: EffectComposer | null = null;
   private renderPass: RenderPass | null = null;
   private state: SimState;
+  private prevPlayerPos: Vec3;
+  private prevShadePositions = new Map<string, Vec3>();
   private worldScene: IslandScene;
   private paused = false;
   private rightPulseQueued = false;
@@ -58,6 +60,8 @@ class GameApp {
     this.camRig = new ThirdPersonCamera(this.renderer.domElement);
 
     this.state = createWorld(SEED_BASE);
+    this.prevPlayerPos = [...this.state.player.pos];
+    this.snapshotPrevShades();
     this.worldScene = new IslandScene(this.state);
     this.setupComposer();
 
@@ -146,6 +150,13 @@ class GameApp {
     this.hud.setPaused(this.paused, this.state.status);
   }
 
+  private snapshotPrevShades(): void {
+    this.prevShadePositions.clear();
+    for (const s of this.state.shades) {
+      this.prevShadePositions.set(s.id, [s.pos[0], s.pos[1], s.pos[2]]);
+    }
+  }
+
   restart(): void {
     this.runCount += 1;
     this.paused = false;
@@ -155,6 +166,8 @@ class GameApp {
     this.camRig.reset();
     this.worldScene.dispose();
     this.state = createWorld(SEED_BASE + this.runCount);
+    this.prevPlayerPos = [...this.state.player.pos];
+    this.snapshotPrevShades();
     this.worldScene = new IslandScene(this.state);
     if (this.renderPass) {
       this.renderPass.scene = this.worldScene.scene;
@@ -172,11 +185,24 @@ class GameApp {
 
       let tickEvents: SimEvent[] = [];
       let simDt = 0;
+      const liveInput = mapKeysToInput(this.pressedKeys, this.camRig.yawDeg, false);
+      const isMovingInput =
+        !this.paused &&
+        this.state.status === 'playing' &&
+        (liveInput.move[0] !== 0 || liveInput.move[1] !== 0);
+
       if (!this.paused && this.state.status === 'playing') {
         simDt = frameDt;
         this.elapsedSec += frameDt;
         this.accumulator += frameDt;
         while (this.accumulator >= DT && this.state.status === 'playing') {
+          this.prevPlayerPos = [
+            this.state.player.pos[0],
+            this.state.player.pos[1],
+            this.state.player.pos[2]
+          ];
+          this.snapshotPrevShades();
+
           const input = mapKeysToInput(
             this.pressedKeys,
             this.camRig.yawDeg,
@@ -184,7 +210,12 @@ class GameApp {
           );
           this.rightPulseQueued = false;
           const evs = stepTick(this.state, input);
-          if (evs.length > 0) tickEvents = tickEvents.concat(evs);
+          if (evs.length > 0) {
+            tickEvents = tickEvents.concat(evs);
+            if (evs.some((e) => e.name === 'player_hit' && e.data.by === 'fall')) {
+              this.prevPlayerPos = [...this.state.player.pos];
+            }
+          }
           this.accumulator -= DT;
         }
         if (tickEvents.length > 0) {
@@ -198,8 +229,17 @@ class GameApp {
         }
       }
 
-      this.worldScene.sync(this.state, tickEvents, this.elapsedSec, simDt);
-      this.camRig.update(this.camera, this.state.player.pos, this.pressedKeys, frameDt);
+      const alpha = !this.paused && this.state.status === 'playing' ? this.accumulator / DT : 1;
+      const renderPlayerPos = this.worldScene.sync(this.state, tickEvents, {
+        alpha,
+        simDt,
+        frameDt,
+        elapsedSec: this.elapsedSec,
+        isMovingInput,
+        prevPlayerPos: this.prevPlayerPos,
+        prevShadePositions: this.prevShadePositions
+      });
+      this.camRig.update(this.camera, renderPlayerPos, this.pressedKeys, frameDt);
       this.hud.update(this.state, this.paused, frameDt);
 
       if (this.composer) {

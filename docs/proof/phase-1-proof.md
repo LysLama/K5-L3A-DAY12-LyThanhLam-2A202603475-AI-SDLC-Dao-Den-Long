@@ -10,7 +10,7 @@ Tất cả kiểm chứng dưới đây được chạy trực tiếp sau lần 
 | Đảo tròn, 5 Đèn Lồng, Đom đóm, Bóng Mực & Merge `scenario` | Unit test khởi tạo mặc định và `scenario` ghi đè (kể cả ID hỗn hợp) không phát event/score | `tests/unit/world.test.ts` | **Đạt** (5/5 test pass) |
 | Di chuyển theo `cam_yaw_deg`, chuẩn hóa vector, sườn lên button, nhảy/rơi, `pickup`, `pulse` trước `hit`, `safe_radius`, `all_lit` trước `dawn` | Unit test từng cơ chế và biên trong `stepTick` | `tests/unit/step.test.ts` | **Đạt** (7/7 test pass) |
 | Chuẩn CLI `--seed`, `--night 1`, exit code `2` khi sai JSON/schema (`inputs`/`scenario`), exit `1` khi sai flag | Integration test chạy tiến trình `node dist-headless/cli.mjs` | `tests/contract/headless.test.ts` | **Đạt** (4/4 test pass) |
-| Tương thích điều khiển client 3D & camera Y-up | Unit test `mapKeysToInput` + tích có hướng ở yaw `0°`, `45°`, `90°` | `tests/unit/clientInput.test.ts` | **Đạt** (2/2 test pass) |
+| Tương thích điều khiển client 3D, camera Y-up & nội suy render mượt | Unit test `mapKeysToInput`, `interpolatePos`, `unwrapAngleRad` | `tests/unit/clientInput.test.ts`, `tests/unit/renderSmoothing.test.ts` | **Đạt** (4/4 test pass) |
 | Kịch bản thắng Đêm 1 đủ chu trình (`mote_picked` → `pulse` → `deposit` → `lantern_lit` → `all_lit`) | Chạy CLI trên `win-all-lit.scenario.json` + `win-all-lit.inputs.json` | [`docs/proof/phase1-scenarios/out-win-all-lit.jsonl`](phase1-scenarios/out-win-all-lit.jsonl) | **Đạt** (`ticks=171`, `state="won"`, `score=1870`) |
 | Kịch bản thua do mất hết lửa (`no_flames`) | Chạy CLI trên `loss-no-flames.scenario.json` | [`docs/proof/phase1-scenarios/out-loss-no-flames.jsonl`](phase1-scenarios/out-loss-no-flames.jsonl) | **Đạt** (`ticks=12`, `state="lost"`, `reason="no_flames"`) |
 | Kịch bản thua do hết giờ bình minh (`dawn`) | Chạy CLI trên `loss-dawn.scenario.json` | [`docs/proof/phase1-scenarios/out-loss-dawn.jsonl`](phase1-scenarios/out-loss-dawn.jsonl) | **Đạt** (`ticks=12`, `state="lost"`, `reason="dawn"`) |
@@ -27,8 +27,8 @@ dist/index.html                   1.82 kB │ gzip:   0.78 kB
 dist/assets/index-Bss0dMaw.js   568.62 kB │ gzip: 143.64 kB
 ✓ built in 211ms
 
- Test Files  5 passed (5)
-      Tests  19 passed (19)
+ Test Files  6 passed (6)
+      Tests  21 passed (21)
   - win-all-lit: PASS (ticks=171, score=1870)
   - loss-no-flames: PASS (ticks=12)
   - loss-dawn: PASS (ticks=12)

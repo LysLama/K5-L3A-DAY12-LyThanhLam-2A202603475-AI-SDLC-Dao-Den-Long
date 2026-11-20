@@ -68,7 +68,7 @@ Các yếu tố sáng tạo được cô lập hoàn toàn trong lớp trình di
 1. **Âm thanh cổ tích sinh bằng Web Audio API ([`src/client/audio.ts`](src/client/audio.ts)):** Tạo âm thanh chuông gió khi nhặt đom đóm, hợp âm ấm khi thắp Đèn Lồng, sóng cộng hưởng khi Tỏa Sáng và nhạc hiệu thắng/thua (có nút tắt `[M]`).
 2. **Đảo Bến thức tỉnh, Bloom & VFX ([`src/client/sceneBuilder.ts`](src/client/sceneBuilder.ts), [`src/client/particles.ts`](src/client/particles.ts)):** Hòn đảo nổi có bến thuyền, 5 lối đá dẫn tới 5 Đèn Lồng Lớn, rừng thông stylized, trăng đêm, Bóng Mực có xúc tu và sao choáng, hiệu ứng hạt `mote_picked`/`deposit`/`lantern_lit`/`pulse`/`player_hit` kết hợp hậu kỳ `UnrealBloomPass` và bộ HUD icon SVG đồng bộ.
 
-**Bằng chứng phần lõi không đổi:** `npm run verify` chạy `node dist-headless/cli.mjs` độc lập hoàn toàn với `src/client/`, xác minh 19/19 unit & contract test pass, kịch bản thắng/thua/rơi đảo đạt chuẩn Test Contract v1.0, và 2 lần chạy `--seed 42 --ticks 600` cho output giống hệt nhau từng byte (`92,401` bytes).
+**Bằng chứng phần lõi không đổi:** `npm run verify` chạy `node dist-headless/cli.mjs` độc lập hoàn toàn với `src/client/`, xác minh 21/21 unit & contract test pass, kịch bản thắng/thua/rơi đảo đạt chuẩn Test Contract v1.0, và 2 lần chạy `--seed 42 --ticks 600` cho output giống hệt nhau từng byte (`92,401` bytes).
 
 ---
 
