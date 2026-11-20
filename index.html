@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Đảo Đèn Lồng — Đêm 1: Đảo Bến</title>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div class="hud">
+      <div class="hud-top">
+        <div class="hud-group">
+          <div id="hud-flames" class="pill">🔥 3 / 3</div>
+          <div id="hud-carried" class="pill">✦ 0 / 10</div>
+          <div id="hud-lanterns" class="pill">🏮 0 / 5</div>
+        </div>
+        <div class="hud-group">
+          <div id="hud-timer" class="pill">⏳ 04:00</div>
+          <div id="hud-score" class="pill">Điểm: 0</div>
+          <button id="btn-mute" class="pill" type="button">🔊 Âm: Bật [M]</button>
+          <button id="btn-pause" class="pill" type="button">⏸ Tạm dừng [P]</button>
+        </div>
+      </div>
+
+      <div class="hud-bottom">
+        <div id="hud-prompt" class="prompt hidden"></div>
+        <div id="hud-pulse" class="pill pulse-wait">Tỏa Sáng: cần 2 đom đóm</div>
+        <div class="controls-bar">
+          WASD: Di chuyển · Kéo chuột / ← →: Xoay camera · Space: Nhảy · E / F: Thắp Đèn Lồng · Shift / R / Chuột phải: Tỏa Sáng
+        </div>
+      </div>
+    </div>
+
+    <div id="game-overlay" class="overlay hidden">
+      <div class="overlay-card">
+        <h1 id="overlay-title">Đảo Đèn Lồng</h1>
+        <p id="overlay-sub"></p>
+        <div id="overlay-score" class="overlay-score"></div>
+        <button id="btn-retry" class="btn-primary" type="button">Chơi lại</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/client/main.ts"></script>
+  </body>
+</html>
