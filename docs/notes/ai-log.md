@@ -1,4 +1,4 @@
-# Nhật ký Dùng AI & Đánh giá Phase 1–3
+# Nhật ký Dùng AI & Đánh giá Phase 1–4
 
 ## 1. Quy trình làm việc với AI
 

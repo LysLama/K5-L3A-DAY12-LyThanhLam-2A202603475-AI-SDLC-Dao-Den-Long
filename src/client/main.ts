@@ -227,6 +227,7 @@ class GameApp {
 
       this.audio.unlock();
       const pauseCode = this.settings.keybindings.pause;
+      const boundSet = new Set(Object.values(this.settings.keybindings));
       if (e.repeat && [pauseCode, 'KeyP', 'Escape', 'KeyM', 'KeyH', 'Enter'].includes(e.code)) return;
       if (e.code === pauseCode || e.code === 'Escape') {
         if (this.screen === 'playing' || this.screen === 'paused') {
@@ -234,12 +235,12 @@ class GameApp {
         }
         return;
       }
-      if (e.code === 'KeyM') {
+      if (e.code === 'KeyM' && !(this.screen === 'playing' && boundSet.has('KeyM'))) {
         this.hud.setMuted(this.audio.toggleMute());
         return;
       }
-      if (e.code === 'KeyH') {
-        if (this.screen === 'playing') this.hud.toggleHelp();
+      if (e.code === 'KeyH' && this.screen === 'playing' && !boundSet.has('KeyH')) {
+        this.hud.toggleHelp();
         return;
       }
       if (e.code === 'Enter') {
@@ -444,7 +445,7 @@ class GameApp {
     const avgFps = sumDt > 0 ? (1000 * this.benchDtsMs.length) / sumDt : 0;
     const payload = {
       dtsMs: this.benchDtsMs,
-      vsyncOff: avgFps > 64 || navigator.userAgent.includes('Electron'),
+      vsyncOff: avgFps > 64,
       renderer: this.getWebglRendererDesc()
     };
     void fetch('/api/bench-done', {

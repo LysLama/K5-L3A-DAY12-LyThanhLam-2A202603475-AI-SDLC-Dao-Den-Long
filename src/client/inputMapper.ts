@@ -114,8 +114,9 @@ export function mapKeysToInput(
   if (isActionPressed(pressedKeys, bindings.right)) mx -= 1;
   if (isActionPressed(pressedKeys, bindings.left)) mx += 1;
 
-  const extraInteract = bindings.interact === 'KeyE' ? ['KeyF'] : [];
-  const extraPulse = bindings.pulse === 'KeyQ' ? ['KeyR'] : [];
+  const boundCodes = new Set(Object.values(bindings));
+  const extraInteract = bindings.interact === 'KeyE' && !boundCodes.has('KeyF') ? ['KeyF'] : [];
+  const extraPulse = bindings.pulse === 'KeyQ' && !boundCodes.has('KeyR') ? ['KeyR'] : [];
 
   return {
     move: [mx, mz],

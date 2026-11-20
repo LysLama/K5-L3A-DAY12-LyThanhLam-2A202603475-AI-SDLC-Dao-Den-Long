@@ -17,7 +17,7 @@
    - **Tùy chỉnh toàn bộ `9` phím điều khiển** kèm phát hiện trùng phím & nút `"Khôi phục mặc định"`.
    - **Chế độ Giảm chuyển động** (tắt rung camera khi va chạm/pulse/thắp đèn và tắt hiệu ứng chuyển động CSS) + **Chữ lớn `×1.25`** (`>= 22.5px`, mặc định nền `>= 18px`) lưu bền vững qua `localStorage`.
 6. **Phát hành & Vận hành:**
-   - Hoàn thiện [`Dockerfile`](Dockerfile), [`.dockerignore`](.dockerignore), [`scripts/package-release.mjs`](scripts/package-release.mjs) (`dao-den-long-v1.0.0-web.zip`), [`scripts/record-demo.mjs`](scripts/record-demo.mjs) (`docs/demo/demo.mp4` + `docs/demo/screenshot.png`), nâng cấp [`scripts/verify-all.mjs`](scripts/verify-all.mjs) lên cổng `7/7` (`v1.3`), CI `.github/workflows/ci.yml`, `CHANGELOG.md`, `CREDITS.md`, `LICENSE` (MIT), và tổng kết [`docs/notes/retro.md`](docs/notes/retro.md).
+   - Hoàn thiện [`Dockerfile`](Dockerfile), [`.dockerignore`](.dockerignore), [`scripts/package-release.mjs`](scripts/package-release.mjs) (`dao-den-long-v1.0.0-web.zip`), [`scripts/record-demo.mjs`](scripts/record-demo.mjs) (`docs/demo/demo.mp4` + `docs/demo/screenshot.png`), nâng cấp [`scripts/verify-all.mjs`](scripts/verify-all.mjs) lên cổng `7/7` (`v1.3`), tận dụng CI [`.github/workflows/ci.yml`](.github/workflows/ci.yml) chạy `npm run verify`, cập nhật `CHANGELOG.md`, `CREDITS.md`, `LICENSE` (MIT) và tổng kết [`docs/notes/retro.md`](docs/notes/retro.md).
 
 ## [Phase 3 — Contract v1.2] - 2026-11-20 (TICKET-03 "Đèn cạn dầu")
 

@@ -10,8 +10,8 @@
 
 Chạy trên mã nguồn Phase 4 (`Vitest v5.1.1` + `Node v22`):
 
-- **`npm run build`:** `tsc --noEmit && vite build && node scripts/build-headless.mjs && node scripts/build-app.mjs` — `✓ built in 235ms`, `0` lỗi TypeScript.
-- **1/7 Unit & Contract Suite (`npm test`):** **`13` file / `44` test PASS (`1.98s`)**, gồm:
+- **`npm run build`:** `tsc --noEmit && vite build && node scripts/build-headless.mjs && node scripts/build-app.mjs` — `✓ built in 209ms`, `0` lỗi TypeScript.
+- **1/7 Unit & Contract Suite (`npm test`):** **`13` file / `44` test PASS (`1.99s`)**, gồm:
   - `tests/unit/world.test.ts` (4 tests)
   - `tests/unit/step.test.ts` (12 tests)
   - `tests/unit/maps.test.ts` (3 tests)
@@ -29,10 +29,10 @@ Chạy trên mã nguồn Phase 4 (`Vitest v5.1.1` + `Node v22`):
 - **3/7 Phase 1 Regressions (4 kịch bản dưới luật `v1.3`):** **PASS** (`win-all-lit`, `loss-no-flames`, `loss-dawn`, `fall-edge`).
 - **4/7 Phase 2 Features (6 kịch bản dưới luật `v1.3`):** **PASS** (`dash`, `charm`, `drifter`, `night2-bridge-jump`, `night3-tiers-wind`, `pause-resume`).
 - **5/7 Phase 3 Fuel / Drain+Pulse / Dawn Survived / Capacity Scaling (4 kịch bản):** **PASS** (`fuel-refuel-relight`, `shade-drain-pulse`, `dawn-survived-threshold`, `capacity-scaling`).
-- **6/7 Determinism Đêm 1–3 & Night 3 `21,600` ticks CLI benchmark:** **PASS** (`21,600` ticks trong `528 ms <= 30,000 ms`).
+- **6/7 Determinism Đêm 1–3 & Night 3 `21,600` ticks CLI benchmark:** **PASS** (`21,600` ticks trong `524 ms <= 30,000 ms`).
 - **7/7 Leaderboard Export, Live 10-Night Soak & Bench/Soak Reports:** **PASS**
   - Xuất leaderboard CLI (`empty` & `sorted`): **PASS**
-  - Live 10-Night Soak trong gate: `crashes=0`, RSS `46 -> 41 MB` trong `0.3 s` (**PASS**)
+  - Live 10-Night Soak trong gate: `crashes=0`, RSS `45 -> 41 MB` trong `0.3 s` (**PASS**)
 
 ---
 

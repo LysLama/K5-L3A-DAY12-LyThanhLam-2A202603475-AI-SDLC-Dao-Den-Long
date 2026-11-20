@@ -617,7 +617,7 @@ export class HudController {
     this.resultSavePanelEl.classList.toggle('hidden', !eligibleSave);
     if (eligibleSave) {
       this.pendingResultRecord = {
-        score: campaignTotalScore,
+        score: scoreValue,
         nightsWon: Math.max(0, Math.min(3, nightsWonCount)),
         seed: state.seed,
         saved: false

@@ -88,6 +88,12 @@ describe('client input mapping parity & remappable accessibility bindings', () =
     // Default ShiftLeft accepts ShiftRight seamlessly
     const shiftRight = mapKeysToInput(new Set(['ShiftRight']), 0, false, false, DEFAULT_KEYBINDINGS);
     expect(shiftRight.dash).toBe(true);
+
+    // Rebinding another action onto KeyF disables secondary interact alias KeyF
+    const dashF: KeyBindings = { ...DEFAULT_KEYBINDINGS, dash: 'KeyF' };
+    const fPressed = mapKeysToInput(new Set(['KeyF']), 0, false, false, dashF);
+    expect(fPressed.dash).toBe(true);
+    expect(fPressed.interact).toBe(false);
   });
 
   it('detects duplicate key assignments across the 9 remappable actions and formats human labels', () => {
