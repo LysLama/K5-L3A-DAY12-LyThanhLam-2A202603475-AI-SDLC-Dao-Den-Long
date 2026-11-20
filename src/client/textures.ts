@@ -1,7 +1,12 @@
 import * as THREE from 'three';
-import { DEFAULT_LANTERN_POSITIONS, ISLAND_RADIUS } from '../sim/constants';
+import { getMapConfig } from '../sim/maps';
+import type { NightId } from '../sim/types';
+import { PALETTE } from './palette';
 
-export function createGlowTexture(innerRgba = 'rgba(255,255,255,1)', midRgba = 'rgba(255,195,90,0.65)'): THREE.CanvasTexture {
+export function createGlowTexture(
+  innerRgba = 'rgba(255,255,255,1)',
+  midRgba = 'rgba(255,179,71,0.65)'
+): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 128;
   canvas.height = 128;
@@ -17,74 +22,96 @@ export function createGlowTexture(innerRgba = 'rgba(255,255,255,1)', midRgba = '
   return tex;
 }
 
-export function createIslandGroundTexture(): THREE.CanvasTexture {
+export function createIslandGroundTexture(
+  night: NightId = 1,
+  discRadius = 40,
+  discCenterX = 0,
+  spawnLocal: [number, number] = [0, 0]
+): THREE.CanvasTexture {
   const size = 512;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
-
   const cx = size / 2;
   const cy = size / 2;
 
-  // Base radial mossy earth -> twilight stone edge
+  // Base moss-emerald grass -> coastal sandy rim -> deep lagoon water border
   const bg = ctx.createRadialGradient(cx, cy, 18, cx, cy, size * 0.5);
-  bg.addColorStop(0, '#363a61');
-  bg.addColorStop(0.35, '#2b3052');
-  bg.addColorStop(0.82, '#232642');
-  bg.addColorStop(1, '#1a1c33');
+  bg.addColorStop(0, '#366859');
+  bg.addColorStop(0.62, PALETTE.grassHex);
+  bg.addColorStop(0.86, '#567a64');
+  bg.addColorStop(0.95, PALETTE.sandHex);
+  bg.addColorStop(1, PALETTE.waterHex);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, size, size);
 
-  const toPx = (worldCoord: number) => cx + (worldCoord / ISLAND_RADIUS) * (size * 0.48);
+  const toPxX = (worldX: number) => cx + ((worldX - discCenterX) / discRadius) * (size * 0.5);
+  const toPxY = (worldZ: number) => cy + (worldZ / discRadius) * (size * 0.5);
+  const mapCfg = getMapConfig(night);
 
-  // Five radial stone pathways leading from center plaza to L1..L5
-  for (const lantern of DEFAULT_LANTERN_POSITIONS) {
-    const lx = toPx(lantern.pos[0]);
-    const lz = toPx(lantern.pos[2]);
+  const sxCenter = toPxX(spawnLocal[0]);
+  const szCenter = toPxY(spawnLocal[1]);
+
+  // Draw warm sandy pathways toward lanterns belonging to this disc
+  for (const lantern of mapCfg.lanterns) {
+    const dxDisc = lantern.pos[0] - discCenterX;
+    const dzDisc = lantern.pos[2];
+    if (Math.hypot(dxDisc, dzDisc) > discRadius + 1) continue;
+
+    const lx = toPxX(lantern.pos[0]);
+    const lz = toPxY(lantern.pos[2]);
+
     ctx.save();
-    ctx.strokeStyle = 'rgba(130, 122, 168, 0.28)';
-    ctx.lineWidth = 14;
+    ctx.strokeStyle = 'rgba(201, 180, 138, 0.36)';
+    ctx.lineWidth = 12;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(cx, cy);
+    ctx.moveTo(sxCenter, szCenter);
     ctx.lineTo(lx, lz);
     ctx.stroke();
 
-    // Stepping stone highlights along each path
     const steps = 6;
     for (let i = 1; i <= steps; i++) {
       const t = i / (steps + 0.5);
-      const sx = cx + (lx - cx) * t;
-      const sy = cy + (lz - cy) * t;
-      ctx.fillStyle = 'rgba(166, 156, 204, 0.22)';
+      const px = sxCenter + (lx - sxCenter) * t;
+      const py = szCenter + (lz - szCenter) * t;
+      ctx.fillStyle = 'rgba(201, 180, 138, 0.45)';
       ctx.beginPath();
-      ctx.ellipse(sx, sy, 6, 4.5, t * 2.1, 0, Math.PI * 2);
+      ctx.ellipse(px, py, 5.5, 4, t * 2.1, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
+
+    // Subtle stone dais ring under each lantern
+    ctx.strokeStyle = 'rgba(242, 193, 78, 0.25)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(lx, lz, (2.2 / discRadius) * (size * 0.5), 0, Math.PI * 2);
+    ctx.stroke();
   }
 
-  // Concentric plaza stone ring around spawn
-  ctx.strokeStyle = 'rgba(255, 198, 112, 0.24)';
+  // Spawn courtyard ring
+  ctx.strokeStyle = 'rgba(201, 180, 138, 0.48)';
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.arc(cx, cy, (4.5 / ISLAND_RADIUS) * (size * 0.48), 0, Math.PI * 2);
+  ctx.arc(sxCenter, szCenter, (3.8 / discRadius) * (size * 0.5), 0, Math.PI * 2);
   ctx.stroke();
 
-  // Subtle deterministic organic speckles for ground richness
-  let seed = 1337;
+  // Organic deterministic grass & pebble speckles
+  let seed = 1337 + night * 97 + Math.round(discCenterX);
   const rand = () => {
     seed = (seed * 1664525 + 1013904223) >>> 0;
     return seed / 4294967296;
   };
-  for (let i = 0; i < 450; i++) {
-    const r = Math.sqrt(rand()) * (size * 0.47);
+  for (let i = 0; i < 420; i++) {
+    const r = Math.sqrt(rand()) * (size * 0.46);
     const a = rand() * Math.PI * 2;
     const x = cx + Math.cos(a) * r;
     const y = cy + Math.sin(a) * r;
-    const rad = 1 + rand() * 2.6;
-    ctx.fillStyle = rand() > 0.5 ? 'rgba(92, 114, 158, 0.14)' : 'rgba(20, 16, 42, 0.2)';
+    const rad = 1 + rand() * 2.4;
+    ctx.fillStyle =
+      rand() > 0.55 ? 'rgba(65, 118, 100, 0.28)' : 'rgba(26, 48, 42, 0.22)';
     ctx.beginPath();
     ctx.arc(x, y, rad, 0, Math.PI * 2);
     ctx.fill();
@@ -92,5 +119,31 @@ export function createIslandGroundTexture(): THREE.CanvasTexture {
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+export function createBambooBridgeTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = PALETTE.woodHex;
+  ctx.fillRect(0, 0, 256, 128);
+
+  // Bamboo slat cross-bars
+  for (let x = 0; x < 256; x += 16) {
+    ctx.fillStyle = x % 32 === 0 ? 'rgba(201, 180, 138, 0.22)' : 'rgba(35, 22, 12, 0.35)';
+    ctx.fillRect(x, 0, 4, 128);
+  }
+  // Longitudinal side rails
+  ctx.fillStyle = 'rgba(201, 180, 138, 0.38)';
+  ctx.fillRect(0, 6, 256, 8);
+  ctx.fillRect(0, 114, 256, 8);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.repeat.set(3, 1);
   return tex;
 }

@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import type { Vec3 } from '../sim/types';
+import type { Vec2, Vec3 } from '../sim/types';
 
 export class ThirdPersonCamera {
   yawDeg = 0;
+  sensitivity = 1.0;
   private pitchDeg = 24;
   private distance = 12.5;
   private dragging = false;
@@ -27,13 +28,14 @@ export class ThirdPersonCamera {
       }
     };
     this.onMouseMove = (e: MouseEvent) => {
-      if (!this.dragging) return;
-      const dx = e.clientX - this.lastX;
-      const dy = e.clientY - this.lastY;
+      const pointerLocked = document.pointerLockElement === this.domElement;
+      if (!this.dragging && !pointerLocked) return;
+      const dx = pointerLocked ? e.movementX : e.clientX - this.lastX;
+      const dy = pointerLocked ? e.movementY : e.clientY - this.lastY;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
-      this.yawDeg -= dx * 0.35;
-      this.pitchDeg = Math.max(10, Math.min(55, this.pitchDeg + dy * 0.25));
+      this.yawDeg -= dx * 0.35 * this.sensitivity;
+      this.pitchDeg = Math.max(10, Math.min(55, this.pitchDeg + dy * 0.25 * this.sensitivity));
     };
     this.onMouseUp = () => {
       this.dragging = false;
@@ -48,14 +50,30 @@ export class ThirdPersonCamera {
     this.domElement.addEventListener('wheel', this.onWheel, { passive: true });
   }
 
-  reset(): void {
-    this.yawDeg = 0;
+  setSensitivity(sens: number): void {
+    this.sensitivity = Math.max(0.3, Math.min(2.5, sens));
+  }
+
+  reset(spawnPos: Vec3 = [0, 0, 0], spawnFacing: Vec2 = [0, 1]): void {
+    this.yawDeg = (Math.atan2(spawnFacing[0], spawnFacing[1]) * 180) / Math.PI;
     this.pitchDeg = 24;
     this.distance = 12.5;
     this.shakeTime = 0;
     this.shakeIntensity = 0;
-    this.currentPos.set(0, 7, -12.5);
-    this.currentTarget.set(0, 1.4, 0);
+
+    const yawRad = (this.yawDeg * Math.PI) / 180;
+    const pitchRad = (this.pitchDeg * Math.PI) / 180;
+    const horizDist = this.distance * Math.cos(pitchRad);
+    const vertDist = this.distance * Math.sin(pitchRad) + 1.4;
+    const fx = Math.sin(yawRad);
+    const fz = Math.cos(yawRad);
+
+    this.currentPos.set(
+      spawnPos[0] - fx * horizDist,
+      spawnPos[1] + vertDist,
+      spawnPos[2] - fz * horizDist
+    );
+    this.currentTarget.set(spawnPos[0] + fx * 1.4, spawnPos[1] + 1.35, spawnPos[2] + fz * 1.4);
   }
 
   triggerShake(intensity: number, duration = 0.25): void {
@@ -64,7 +82,7 @@ export class ThirdPersonCamera {
   }
 
   update(camera: THREE.PerspectiveCamera, playerPos: Vec3, pressedKeys: ReadonlySet<string>, dt: number): void {
-    const keyTurnSpeed = 110; // deg/s
+    const keyTurnSpeed = 110 * Math.max(0.6, Math.min(1.8, this.sensitivity)); // deg/s
     if (pressedKeys.has('ArrowRight')) this.yawDeg -= keyTurnSpeed * dt;
     if (pressedKeys.has('ArrowLeft')) this.yawDeg += keyTurnSpeed * dt;
 
@@ -79,7 +97,7 @@ export class ThirdPersonCamera {
 
     const desiredPos = new THREE.Vector3(
       playerPos[0] - forwardX * horizDist,
-      Math.max(1.2, playerPos[1] + vertDist),
+      Math.max(playerPos[1] + 1.2, playerPos[1] + vertDist),
       playerPos[2] - forwardZ * horizDist
     );
     const desiredTarget = new THREE.Vector3(

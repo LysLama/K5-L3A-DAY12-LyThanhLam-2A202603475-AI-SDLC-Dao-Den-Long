@@ -17,15 +17,24 @@ describe('client input mapping parity', () => {
     const back = mapKeysToInput(new Set(['KeyS']), 0);
     expect(back.move).toEqual([0, -1]);
 
-    const actions = mapKeysToInput(new Set(['Space', 'KeyE', 'ShiftLeft']), 90);
+    const actions = mapKeysToInput(new Set(['Space', 'KeyE', 'ShiftLeft', 'KeyQ']), 90);
     expect(actions.jump).toBe(true);
     expect(actions.interact).toBe(true);
+    expect(actions.dash).toBe(true);
     expect(actions.pulse).toBe(true);
+    expect(actions.pause).toBe(false);
     expect(actions.cam_yaw_deg).toBe(90);
 
-    const altActions = mapKeysToInput(new Set(['KeyF', 'KeyR']), 0);
+    const altActions = mapKeysToInput(new Set(['KeyF', 'KeyR', 'ShiftRight', 'KeyP']), 0);
     expect(altActions.interact).toBe(true);
     expect(altActions.pulse).toBe(true);
+    expect(altActions.dash).toBe(true);
+    expect(altActions.pause).toBe(true);
+
+    const mousePulse = mapKeysToInput(new Set(), 0, true, true);
+    expect(mousePulse.pulse).toBe(true);
+    expect(mousePulse.dash).toBe(false);
+    expect(mousePulse.pause).toBe(true);
   });
 
   it('moves perpendicular to the right of camera forward when pressing D at arbitrary yaw', () => {
